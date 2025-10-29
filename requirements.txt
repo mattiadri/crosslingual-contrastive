@@ -1,0 +1,14 @@
+pandas
+polars
+torch
+requests
+tqdm
+pyarrow
+aiohttp
+pillow
+webdataset
+uvloop
+orjson
+torchvision
+timm
+cairosvg
