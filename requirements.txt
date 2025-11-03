@@ -12,3 +12,6 @@ orjson
 torchvision
 timm
 cairosvg
+open_clip_torch
+sentence_transformers
+matplotlib
