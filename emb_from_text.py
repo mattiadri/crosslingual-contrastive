@@ -22,7 +22,7 @@ Saved payload per shard:
 Example:
 python emb_from_text.py \
   --out_dir /home/mattia/crosslingual-contrastive/webdataset \
-  --splits train,val,test \
+  --splits full \
   --text_model sentence-transformers/clip-ViT-B-32-multilingual-v1 \
   --langs en,fr,es,pt,zh,ar,ja,it,de \
   --batch 1024 --device cuda
@@ -165,7 +165,7 @@ def process_split(split: str, args, txt_model: SentenceTransformer) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out_dir", required=True, help="Root folder containing {split}/shard-*.tar.")
-    ap.add_argument("--splits", default="all", help='Comma-separated (e.g., "train,val,test") or "all".')
+    ap.add_argument("--splits", default="full", help='Comma-separated (e.g., "train,val,test") or "all".')
     ap.add_argument("--text_model", default="sentence-transformers/clip-ViT-B-32-multilingual-v1",
                     help="Sentence-Transformers model id compatible with CLIP image encoder.")
     ap.add_argument("--langs", default="en,fr,es,pt,zh,ar,ja,it,de",

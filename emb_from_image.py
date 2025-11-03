@@ -8,8 +8,8 @@ Contains: {model_name, pretrained, split, shard, keys, embeddings [N,D], dim, no
 
 Example:
 python emb_from_image.py \
-  --out_dir /data/my_webdataset \
-  --splits train,val \
+  --out_dir webdataset/ \
+  --splits full \
   --clip_model ViT-B-32 \
   --clip_pretrained openai \
   --batch 256 --num_workers 4 --device cuda
@@ -144,7 +144,7 @@ def process_split(split: str, args, img_encoder, img_tf, device: str) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out_dir", required=True, help="Root folder of the shards (your build script's OUT_DIR).")
-    ap.add_argument("--splits", default="all", help='Comma-separated (e.g., "train,val,test") or "all".')
+    ap.add_argument("--splits", default="full", help='Comma-separated (e.g., "train,val,test") or "all".')
     ap.add_argument("--clip_model", default="ViT-B-32", help="OpenCLIP model name (e.g., ViT-B-32, ViT-B-16, ViT-L-14)")
     ap.add_argument("--clip_pretrained", default="openai", help="Pretrained tag (e.g., openai, laion2b_s34b_b79k, ...)")
     ap.add_argument("--batch", type=int, default=256)

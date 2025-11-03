@@ -50,23 +50,21 @@ VALIDITY_MODE = "single"               # "any" | "single"
 REQUIRED_FIELD_FOR_SINGLE = "cap_ref"  # used only if VALIDITY_MODE == "single"
 
 # Sharding & download
-SHARD_SIZE = 2000
-MAX_CONC_DOWNLOADS = 12          # global concurrency
+SHARD_SIZE = 1000
+MAX_CONC_DOWNLOADS = 8          # global concurrency
 PER_HOST_LIMIT = 4               # per-domain cap (prevents 403/429)
-DOWNLOAD_TIMEOUT = 40            # seconds
-RETRIES = 4
+DOWNLOAD_TIMEOUT = 60            # seconds
+RETRIES = 5
 TTL_DNS_CACHE = 300              # DNS cache TTL (seconds)
 
 # Image robustness
-MAX_IMAGE_BYTES = 65_000_000     # raise if needed
+MAX_IMAGE_BYTES = 50_000_000     # raise if needed
 REENCODE_TO = "jpeg"             # "jpeg" | "png" | "keep"
 JPEG_QUALITY = 95
 
 # Input patterns per split
 SPLIT_PATTERNS = {
-    "train": "wit_v1.train.all-*.tsv",
-    "val":   "wit_v1.val.all-*.tsv",
-    "test":  "wit_v1.test.all-*.tsv",
+    "full":  ["wit_v1.train.all-*.tsv", "wit_v1.val.all-*.tsv", "wit_v1.test.all-*.tsv"]
 }
 
 # Retry policy
@@ -119,7 +117,11 @@ def append_done(split: str, url: str):
         f.write(url + "\n")
 
 def list_tsvs_for_split(split: str) -> List[str]:
-    return sorted(glob.glob(str(Path(DATA_DIR) / SPLIT_PATTERNS[split])))
+    pat = SPLIT_PATTERNS[split]
+    out = []
+    for p in pat:
+        out.extend(sorted(glob.glob(str(Path(DATA_DIR) / p))))
+    return out
 
 def language_to_suffix(lang: str) -> str:
     return lang
@@ -717,8 +719,8 @@ def main():
     parser = argparse.ArgumentParser(description="Build WebDataset shards from WIT TSVs with robust downloader.")
     parser.add_argument("--retry-only", action="store_true",
                         help="Process only URLs listed in state/{split}_retry.txt from the previous run.")
-    parser.add_argument("--splits", type=str, default="train,val,test",
-                        help="Comma-separated list of splits to process (default: train,val,test).")
+    parser.add_argument("--splits", type=str, default="full",
+                        help="Comma-separated list of splits to process.")
     args = parser.parse_args()
 
     print("Config:")
