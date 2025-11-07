@@ -21,7 +21,7 @@ Saved payload per shard:
 
 Example:
 python emb_from_text.py \
-  --out_dir /home/mattia/crosslingual-contrastive/webdataset \
+  --out_dir webdataset \
   --splits full \
   --text_model sentence-transformers/clip-ViT-B-32-multilingual-v1 \
   --langs en,fr,es,pt,zh,ar,ja,it,de \

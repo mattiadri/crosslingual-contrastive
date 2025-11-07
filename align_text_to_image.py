@@ -11,13 +11,17 @@ Expected inputs (precomputed):
 - embeddings_text/<split>/*.pt   (text embeddings per language)
 
 python align_text_to_image.py \
-  --out_dir /home/mattia/crosslingual-contrastive/webdataset \
-  --train_split full --eval_splits "" \
+  --out_dir webdataset \
+  --train_split full \
+  --eval_splits "" \
   --langs ar,de,en,es,fr,it,ja,pt,zh \
+  --device cuda \
   --epochs 20 --steps_per_epoch 12 --batch_per_lang 32 \
-  --lr 3e-3 --wd 5e-4 --temp 0.09 --warmup 90 \
-  --prox_id 1e-3 --ortho 1e-4 --max_grad_norm 1.0 \
-  --device cuda --save_report
+  --lr 1e-3 --wd 7e-4 --temp 0.07 --warmup 150 \
+  --prox_id 3e-3 --ortho 0 --max_grad_norm 2.0 \
+  --early_stop_metric mAP \
+  --save_report \
+  --seed 0
 """
 
 import os
