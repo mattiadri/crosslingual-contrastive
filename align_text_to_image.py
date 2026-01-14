@@ -10,14 +10,24 @@ Expected inputs (precomputed):
 - embeddings_image/<split>/*.pt  (image embeddings)
 - embeddings_text/<split>/*.pt   (text embeddings per language)
 
+#BEST from sweep:
+
 python align_text_to_image.py \
-  --out_dir /home/mattia/crosslingual-contrastive/webdataset \
-  --train_split full --eval_splits "" \
-  --langs ar,de,en,es,fr,it,ja,pt,zh \
-  --epochs 20 --steps_per_epoch 12 --batch_per_lang 32 \
-  --lr 3e-3 --wd 5e-4 --temp 0.09 --warmup 90 \
-  --prox_id 1e-3 --ortho 1e-4 --max_grad_norm 1.0 \
-  --device cuda --save_report
+  --out_dir webdataset --train_split full --eval_splits "" \
+  --langs ar,de,en,es,fr,it,ja,pt,zh --device cuda --save_report \
+  --epochs 16 --steps_per_epoch 10 --batch_per_lang 32 \
+  --lr 1e-3 --wd 7e-4 --temp 0.10 --warmup 150 \
+  --prox_id 3e-3 --ortho 0 --max_grad_norm 1.0 \
+  --head linear --kfold 3 --seed 7
+
+python align_text_to_image.py \
+  --out_dir webdataset --train_split full --eval_splits "" \
+  --langs ar,de,en,es,fr,it,ja,pt,zh --device cuda --save_report \
+  --epochs 16 --steps_per_epoch 10 --batch_per_lang 32 \
+  --lr 1e-3 --wd 7e-4 --temp 0.10 --warmup 150 \
+  --prox_id 3e-3 --max_grad_norm 1.0 \
+  --head mlp --mlp_hidden 512 --mlp_dropout 0.0 \
+  --kfold 3 --seed 7
 """
 
 import os
@@ -75,7 +85,12 @@ def load_text_embeds(split_dir: str, langs: List[str]) -> Dict[str, Dict[str, to
     return out
 
 
-def build_aligned_arrays(img_map: Dict[str, int], I: torch.Tensor, T: Dict[str, Dict[str, torch.Tensor]], langs: List[str]):
+def build_aligned_arrays(
+    img_map: Dict[str, int],
+    I: torch.Tensor,
+    T: Dict[str, Dict[str, torch.Tensor]],
+    langs: List[str],
+):
     sets = [set(T[l]["keys"]) for l in langs]
     common = set(img_map.keys()).intersection(*sets)
     if not common:
@@ -260,6 +275,67 @@ def clip_loss(txt, img, temp=0.07):
     return 0.5 * (F.cross_entropy(logits, y) + F.cross_entropy(logits.T, y))
 
 
+# ---------------------- Heads ----------------------
+
+def make_eye_rect(d_text: int, d_img: int, device) -> torch.Tensor:
+    eye_rect = torch.zeros(d_text, d_img, device=device)
+    for i in range(min(d_text, d_img)):
+        eye_rect[i, i] = 1.0
+    return eye_rect
+
+class LinearDeltaHead(nn.Module):
+    def __init__(self, d_text: int, d_img: int, device):
+        super().__init__()
+        self.d_text = d_text
+        self.d_img = d_img
+        self.register_buffer("eye_rect", make_eye_rect(d_text, d_img, device=device))
+        self.DeltaW = nn.Parameter(torch.zeros(d_text, d_img, device=device))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        W = self.eye_rect + self.DeltaW
+        return x @ W
+
+    def export_cpu(self) -> torch.Tensor:
+        with torch.no_grad():
+            return (self.eye_rect.detach().cpu() + self.DeltaW.detach().cpu())
+
+class ResidualMLPHead(nn.Module):
+    def __init__(self, d_text: int, d_img: int, hidden: int, dropout: float, device):
+        super().__init__()
+        self.d_text = d_text
+        self.d_img = d_img
+        self.hidden = hidden
+        self.dropout = dropout
+        self.register_buffer("eye_rect", make_eye_rect(d_text, d_img, device=device))
+
+        self.fc1 = nn.Linear(d_text, hidden, bias=True, device=device)
+        self.fc2 = nn.Linear(hidden, d_img, bias=True, device=device)
+        self.act = nn.GELU()
+        self.drop = nn.Dropout(p=dropout)
+
+        # init: near-identity (residual starts ~0)
+        nn.init.zeros_(self.fc2.weight)
+        nn.init.zeros_(self.fc2.bias)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        base = x @ self.eye_rect
+        h = self.fc1(x)
+        h = self.act(h)
+        h = self.drop(h)
+        delta = self.fc2(h)
+        return base + delta
+
+    def export_payload(self) -> Dict[str, object]:
+        return {
+            "head": "mlp_residual",
+            "d_text": int(self.d_text),
+            "d_img": int(self.d_img),
+            "hidden": int(self.hidden),
+            "dropout": float(self.dropout),
+            "state_dict": {k: v.detach().cpu() for k, v in self.state_dict().items()},
+        }
+
+
 # ---------------------- Main ----------------------
 
 def main():
@@ -281,14 +357,22 @@ def main():
     ap.add_argument("--kfold", type=int, default=1, help="If >1 and eval_splits is empty, run K-fold CV")
     ap.add_argument("--fold_id", type=int, default=-1, help="If >=0, run only this fold (0..k-1)")
     ap.add_argument("--save_report", action="store_true")
+
     # Regularization & stability
-    ap.add_argument("--prox_id", type=float, default=0.0, help="L2 penalty on ΔW (equiv. ‖W−I‖²). 0 = off")
-    ap.add_argument("--ortho", type=float, default=0.0, help="Soft orthogonality on (W^T W ≈ I). 0 = off")
+    ap.add_argument("--prox_id", type=float, default=0.0, help="L2 penalty (linear: on ΔW; mlp: on params). 0 = off")
+    ap.add_argument("--ortho", type=float, default=0.0, help="Soft orthogonality (linear only). 0 = off")
     ap.add_argument("--max_grad_norm", type=float, default=0.0, help="Clip gradients by global norm; 0 = off")
     ap.add_argument("--early_stop_metric", default="R@1", choices=["R@1", "mAP"], help="Early stopping metric")
+
     # Diagnostics options
     ap.add_argument("--diag_sample", type=int, default=2000, help="Sample size for O(n^2) diagnostics")
     ap.add_argument("--diag_bins", type=int, default=30, help="Histogram bins for entropy")
+
+    # Head choice
+    ap.add_argument("--head", default="linear", choices=["linear", "mlp", "both"])
+    ap.add_argument("--mlp_hidden", type=int, default=1024)
+    ap.add_argument("--mlp_dropout", type=float, default=0.0)
+
     args = ap.parse_args()
 
     torch.manual_seed(args.seed)
@@ -321,27 +405,33 @@ def main():
         I_shared: torch.Tensor,
         holdout_pair: Optional[Tuple[List[torch.Tensor], torch.Tensor]],
         run_tag: str,
+        head_kind: str,
     ):
-        """Train ΔW. If holdout_pair is set, do early stopping on holdout and report holdout before/after macros."""
         N = I_shared.size(0)
         L = len(T_list)
 
-        print(f"[{run_tag}] train items: {N} | langs={langs} | d_text={d_text} | d_img={d_img}")
+        print(f"[{run_tag}][{head_kind}] train items: {N} | langs={langs} | d_text={d_text} | d_img={d_img}")
 
         baseline_train = {langs[i]: retrieval_metrics(T_list[i], I_shared) for i in range(L)}
         diag_before = diagnostics_block("before", T_list, langs, sample=args.diag_sample, bins=args.diag_bins)
 
-        # W = I + ΔW
-        eye_rect = torch.zeros(d_text, d_img, device=device)
-        for i in range(min(d_text, d_img)):
-            eye_rect[i, i] = 1.0
-        DeltaW = nn.Parameter(torch.zeros(d_text, d_img, device=device))
-        opt = torch.optim.Adam([DeltaW], lr=args.lr, weight_decay=args.wd)
+        # build head
+        if head_kind == "linear":
+            head = LinearDeltaHead(d_text, d_img, device=device).to(device)
+            opt_params = [head.DeltaW]
+            eye_square = torch.eye(d_img, device=device)
+        elif head_kind == "mlp":
+            head = ResidualMLPHead(
+                d_text=d_text, d_img=d_img,
+                hidden=args.mlp_hidden, dropout=args.mlp_dropout,
+                device=device
+            ).to(device)
+            opt_params = list(head.parameters())
+            eye_square = None
+        else:
+            raise ValueError("bad head_kind")
 
-        eye_square = torch.eye(d_img, device=device)
-
-        def W_eff():
-            return eye_rect + DeltaW
+        opt = torch.optim.Adam(opt_params, lr=args.lr, weight_decay=args.wd)
 
         total_steps = args.epochs * args.steps_per_epoch
         lr_fn = cosine_warmup(total_steps, args.lr, args.warmup)
@@ -354,7 +444,7 @@ def main():
         T_dev = [t.to(device) for t in T_list]
 
         best_score = -1.0
-        best_DeltaW: Optional[torch.Tensor] = None
+        best_state: Optional[Dict[str, torch.Tensor]] = None
 
         def _macro_score(metric_per_lang: dict, key: str) -> float:
             return float(np.mean([metric_per_lang[l][key] for l in metric_per_lang]))
@@ -366,15 +456,26 @@ def main():
                 batch_t = torch.cat([T_dev[i][idx] for i in range(L)], dim=0)
                 batch_i = I_dev[idx].repeat(L, 1)
 
-                We = W_eff()
-                loss = clip_loss(batch_t @ We, batch_i, temp=args.temp)
+                proj = head(batch_t)
+                loss = clip_loss(proj, batch_i, temp=args.temp)
 
                 if args.prox_id > 0.0:
-                    prox = torch.sum(DeltaW ** 2) / (d_text * d_img)
+                    if head_kind == "linear":
+                        # ΔW L2
+                        prox = torch.sum(head.DeltaW ** 2) / (d_text * d_img)
+                    else:
+                        # params L2 (normalized)
+                        s = 0.0
+                        n = 0
+                        for p in head.parameters():
+                            s = s + torch.sum(p ** 2)
+                            n += p.numel()
+                        prox = s / max(1, n)
                     loss = loss + args.prox_id * prox
 
-                if args.ortho > 0.0:
-                    WT_W = We.t() @ We
+                if args.ortho > 0.0 and head_kind == "linear":
+                    W = head.eye_rect + head.DeltaW
+                    WT_W = W.t() @ W
                     ortho = torch.sum((WT_W - eye_square) ** 2) / (d_img * d_img)
                     loss = loss + args.ortho * ortho
 
@@ -382,28 +483,26 @@ def main():
                 opt.zero_grad()
                 loss.backward()
                 if args.max_grad_norm and args.max_grad_norm > 0:
-                    torch.nn.utils.clip_grad_norm_([DeltaW], args.max_grad_norm)
+                    torch.nn.utils.clip_grad_norm_(opt_params, args.max_grad_norm)
                 opt.step()
                 step += 1
 
             if holdout_pair is not None:
                 T_val, I_val = holdout_pair
                 with torch.no_grad():
-                    We = W_eff()
-                    T_proj_val = [F.normalize(t.to(device) @ We, dim=-1).cpu() for t in T_val]
+                    T_proj_val = [F.normalize(head(t.to(device)), dim=-1).cpu() for t in T_val]
                 val_metrics = {langs[i]: retrieval_metrics(T_proj_val[i], I_val) for i in range(L)}
                 score = _macro_score(val_metrics, args.early_stop_metric)
                 if score > best_score:
                     best_score = score
-                    best_DeltaW = DeltaW.detach().cpu().clone()
-                    print(f"[{run_tag}][earlystop] epoch={epoch} best {args.early_stop_metric}={score:.4f}")
+                    best_state = {k: v.detach().cpu().clone() for k, v in head.state_dict().items()}
+                    print(f"[{run_tag}][{head_kind}][earlystop] epoch={epoch} best {args.early_stop_metric}={score:.4f}")
 
-        if holdout_pair is not None and best_DeltaW is not None:
-            DeltaW.data = best_DeltaW.to(device)
+        if holdout_pair is not None and best_state is not None:
+            head.load_state_dict({k: v.to(device) for k, v in best_state.items()})
 
         with torch.no_grad():
-            We = W_eff()
-            T_proj_train = [F.normalize(t @ We, dim=-1).cpu() for t in T_dev]
+            T_proj_train = [F.normalize(head(t.to(device)), dim=-1).cpu() for t in T_list]
         final_train = {langs[i]: retrieval_metrics(T_proj_train[i], I_shared) for i in range(L)}
         diag_after = diagnostics_block("after", T_proj_train, langs, sample=args.diag_sample, bins=args.diag_bins)
 
@@ -426,15 +525,18 @@ def main():
             "warmup": args.warmup,
             "device": args.device,
             "seed": args.seed,
-            "version": "v5",
+            "version": "v6",
             "prox_id": args.prox_id,
-            "ortho": args.ortho,
+            "ortho": args.ortho if head_kind == "linear" else 0.0,
             "max_grad_norm": args.max_grad_norm,
             "early_stop_metric": args.early_stop_metric,
             "run_tag": run_tag,
+            "head": head_kind,
+            "mlp_hidden": args.mlp_hidden,
+            "mlp_dropout": args.mlp_dropout,
         }
 
-        report = {"version": "v5", "config": config, "results": [], "diagnostics": {}}
+        report = {"version": "v6", "config": config, "results": [], "diagnostics": {}}
         report["results"].append(_result_block(None, "train", I_shared.size(0), baseline_train, final_train))
         report["diagnostics"]["train"] = {
             "before": diag_before,
@@ -449,8 +551,7 @@ def main():
             T_val, I_val = holdout_pair
             base_h = {langs[i]: retrieval_metrics(T_val[i], I_val) for i in range(L)}
             with torch.no_grad():
-                We_cpu = (eye_rect.detach().cpu() + DeltaW.detach().cpu())
-                T_proj_h = [F.normalize(t @ We_cpu, dim=-1) for t in T_val]
+                T_proj_h = [F.normalize(head(t.to(device)), dim=-1).cpu() for t in T_val]
             final_h = {langs[i]: retrieval_metrics(T_proj_h[i], I_val) for i in range(L)}
             report["results"].append(_result_block("holdout", "holdout", I_val.size(0), base_h, final_h))
 
@@ -466,104 +567,102 @@ def main():
             holdout_macro_before = report["results"][-1]["macro_avg"]["before"]
             holdout_macro_after  = report["results"][-1]["macro_avg"]["after"]
 
-        We_cpu = (eye_rect.detach().cpu() + DeltaW.detach().cpu())
-        return We_cpu, report, holdout_macro_before, holdout_macro_after
+        # export weights
+        if head_kind == "linear":
+            export = {"kind": "linear", "W": head.export_cpu(), "langs": langs, "train_split": args.train_split}
+        else:
+            export = {"kind": "mlp", **head.export_payload(), "langs": langs, "train_split": args.train_split}
+        return export, report, holdout_macro_before, holdout_macro_after
+
+    def save_one(export: Dict[str, object], report: Dict[str, object], suffix: str):
+        base = f"{args.train_split}_{'-'.join(langs)}{suffix}"
+        w_path = os.path.join(save_dir, f"W_{base}.pt")
+        torch.save(export, w_path)
+        report["config"]["weight_path"] = w_path
+        if args.save_report:
+            rep_path = os.path.join(save_dir, f"report_{base}.json")
+            with open(rep_path, "w", encoding="utf-8") as f:
+                json.dump(report, f, indent=2)
+            print(f"Saved report -> {rep_path}")
+        print(f"Saved W -> {w_path}")
 
     # -------- K-fold CV (internal eval only) --------
     if not eval_splits and args.kfold and args.kfold > 1:
+        # For CV we keep original behavior: run only one head at a time.
+        # If --head=both, we run CV twice and save separate cv reports.
+        heads_to_run = ["linear", "mlp"] if args.head == "both" else [args.head]
+
         N_all = I_shared_all.size(0)
         if N_all < args.kfold:
             raise SystemExit("Not enough paired samples for requested k-fold")
-        kf = KFold(n_splits=args.kfold, shuffle=True, random_state=args.seed)
 
-        fold_before = []
-        fold_after = []
-        folds_ran = 0
+        for head_kind in heads_to_run:
+            kf = KFold(n_splits=args.kfold, shuffle=True, random_state=args.seed)
+            fold_before = []
+            fold_after = []
+            folds_ran = 0
 
-        for fold, (tr_idx, val_idx) in enumerate(kf.split(np.arange(N_all))):
-            if args.fold_id >= 0 and fold != args.fold_id:
-                continue
+            for fold, (tr_idx, val_idx) in enumerate(kf.split(np.arange(N_all))):
+                if args.fold_id >= 0 and fold != args.fold_id:
+                    continue
 
-            tr_idx = torch.as_tensor(tr_idx, dtype=torch.long)
-            val_idx = torch.as_tensor(val_idx, dtype=torch.long)
+                tr_idx = torch.as_tensor(tr_idx, dtype=torch.long)
+                val_idx = torch.as_tensor(val_idx, dtype=torch.long)
 
-            I_tr, I_val = I_shared_all[tr_idx], I_shared_all[val_idx]
-            T_tr = [t[tr_idx] for t in T_list_all]
-            T_val = [t[val_idx] for t in T_list_all]
+                I_tr, I_val = I_shared_all[tr_idx], I_shared_all[val_idx]
+                T_tr = [t[tr_idx] for t in T_list_all]
+                T_val = [t[val_idx] for t in T_list_all]
 
-            run_tag = f"fold{fold}"
-            We_cpu, rep, hold_b, hold_a = run_one_train(T_tr, I_tr, (T_val, I_val), run_tag=run_tag)
+                run_tag = f"fold{fold}"
+                export, rep, hold_b, hold_a = run_one_train(T_tr, I_tr, (T_val, I_val), run_tag=run_tag, head_kind=head_kind)
 
-            w_path = os.path.join(save_dir, f"W_{args.train_split}_{'-'.join(langs)}_{run_tag}.pt")
-            torch.save({"W": We_cpu, "langs": langs, "train_split": args.train_split, "run_tag": run_tag}, w_path)
-            rep["config"]["weight_path"] = w_path
-            rep_path = os.path.join(save_dir, f"report_{args.train_split}_{'-'.join(langs)}_{run_tag}.json")
-            with open(rep_path, "w", encoding="utf-8") as f:
-                json.dump(rep, f, indent=2)
+                base = f"{args.train_split}_{'-'.join(langs)}_{run_tag}_{head_kind}"
+                w_path = os.path.join(save_dir, f"W_{base}.pt")
+                torch.save(export, w_path)
+                rep["config"]["weight_path"] = w_path
+                rep_path = os.path.join(save_dir, f"report_{base}.json")
+                with open(rep_path, "w", encoding="utf-8") as f:
+                    json.dump(rep, f, indent=2)
 
-            print(f"[{run_tag}] saved W -> {w_path}")
-            print(f"[{run_tag}] saved report -> {rep_path}")
+                print(f"[{run_tag}][{head_kind}] saved W -> {w_path}")
+                print(f"[{run_tag}][{head_kind}] saved report -> {rep_path}")
 
-            folds_ran += 1
-            if hold_b is not None and hold_a is not None:
-                fold_before.append(hold_b)
-                fold_after.append(hold_a)
+                folds_ran += 1
+                if hold_b is not None and hold_a is not None:
+                    fold_before.append(hold_b)
+                    fold_after.append(hold_a)
 
-        if fold_after:
-            keys = list(fold_after[0].keys())
+            if fold_after:
+                keys = list(fold_after[0].keys())
+                mean_b = {k: float(np.mean([d[k] for d in fold_before])) for k in keys}
+                mean_a = {k: float(np.mean([d[k] for d in fold_after])) for k in keys}
+                std_b = {k: float(np.std([d[k] for d in fold_before], ddof=1)) for k in keys} if len(fold_before) > 1 else {k: 0.0 for k in keys}
+                std_a = {k: float(np.std([d[k] for d in fold_after], ddof=1)) for k in keys} if len(fold_after) > 1 else {k: 0.0 for k in keys}
+                delta_mean = {k: float(mean_a[k] - mean_b[k]) for k in keys}
 
-            mean_b = {k: float(np.mean([d[k] for d in fold_before])) for k in keys}
-            mean_a = {k: float(np.mean([d[k] for d in fold_after])) for k in keys}
+                cv_summary = {
+                    "k": int(args.kfold),
+                    "n_folds_ran": int(folds_ran),
+                    "macro_before_mean": mean_b,
+                    "macro_before_std": std_b,
+                    "macro_after_mean": mean_a,
+                    "macro_after_std": std_a,
+                    "macro_delta_mean": delta_mean,
+                    "head": head_kind,
+                }
 
-            # std with ddof=1 (sample std), consistent with paper "std over folds"
-            std_b = {k: float(np.std([d[k] for d in fold_before], ddof=1)) for k in keys} if len(fold_before) > 1 else {k: 0.0 for k in keys}
-            std_a = {k: float(np.std([d[k] for d in fold_after], ddof=1)) for k in keys} if len(fold_after) > 1 else {k: 0.0 for k in keys}
-
-            delta_mean = {k: float(mean_a[k] - mean_b[k]) for k in keys}
-
-            cv_summary = {
-                "k": int(args.kfold),
-                "n_folds_ran": int(folds_ran),
-                "macro_before_mean": mean_b,
-                "macro_before_std": std_b,
-                "macro_after_mean": mean_a,
-                "macro_after_std": std_a,
-                "macro_delta_mean": delta_mean,
-            }
-
-            cv_path = os.path.join(save_dir, f"report_cv_{args.train_split}_{'-'.join(langs)}.json")
-            with open(cv_path, "w", encoding="utf-8") as f:
-                json.dump(
-                    {"version": "v5", "config": {"kfold": args.kfold, "seed": args.seed, "langs": langs, "train_split": args.train_split}, "cv": cv_summary},
-                    f,
-                    indent=2,
-                )
-            print(f"[cv] saved summary -> {cv_path}")
-
-            # Canonical stats file for notebook/paper
-            canon = {
-                "version": "v1",
-                "setup": {
-                    "k_folds": int(args.kfold),
-                    "folds_ran": int(folds_ran),
-                    "split": "holdout",
-                    "macro_avg": True,
-                    "train_split": args.train_split,
-                    "langs": langs,
-                    "seed": int(args.seed),
-                },
-                "before": {k: {"mean": float(mean_b[k]), "std": float(std_b[k])} for k in keys},
-                "after":  {k: {"mean": float(mean_a[k]), "std": float(std_a[k])} for k in keys},
-                "delta":  {k: {"mean": float(delta_mean[k])} for k in keys},
-            }
-            canon_path = os.path.join(save_dir, f"cv_stats_holdout_macro_{args.train_split}_{'-'.join(langs)}.json")
-            with open(canon_path, "w", encoding="utf-8") as f:
-                json.dump(canon, f, indent=2)
-            print(f"[cv] saved canonical stats -> {canon_path}")
+                cv_path = os.path.join(save_dir, f"report_cv_{args.train_split}_{'-'.join(langs)}_{head_kind}.json")
+                with open(cv_path, "w", encoding="utf-8") as f:
+                    json.dump(
+                        {"version": "v6", "config": {"kfold": args.kfold, "seed": args.seed, "langs": langs, "train_split": args.train_split, "head": head_kind}, "cv": cv_summary},
+                        f,
+                        indent=2,
+                    )
+                print(f"[cv][{head_kind}] saved summary -> {cv_path}")
 
         return
 
-    # -------- Single run (original behavior) --------
+    # -------- Single run (original behavior + head variants) --------
     holdout_pair = None
     if not eval_splits:
         if not (0.0 < args.holdout < 1.0):
@@ -583,59 +682,82 @@ def main():
     else:
         T_list_run, I_run = T_list_all, I_shared_all
 
-    We_cpu, report, _, _ = run_one_train(T_list_run, I_run, holdout_pair, run_tag="single")
+    heads_to_run = ["linear", "mlp"] if args.head == "both" else [args.head]
 
-    w_path = os.path.join(save_dir, f"W_{args.train_split}_{'-'.join(langs)}.pt")
-    torch.save({"W": We_cpu, "langs": langs, "train_split": args.train_split}, w_path)
-    report["config"]["weight_path"] = w_path
-    if not eval_splits:
-        report["config"]["holdout"] = args.holdout
-    else:
-        report["config"]["eval_splits"] = eval_splits
-    print(f"Saved W -> {w_path}")
+    for head_kind in heads_to_run:
+        export, report, _, _ = run_one_train(T_list_run, I_run, holdout_pair, run_tag="single", head_kind=head_kind)
 
-    # External eval splits
-    for es in eval_splits:
-        img_dir = os.path.join(args.out_dir, "embeddings_image", es)
-        txt_dir = os.path.join(args.out_dir, "embeddings_text", es)
-        if not (os.path.isdir(img_dir) and os.path.isdir(txt_dir)):
-            print(f"[eval:{es}] missing embeddings dirs (image or text), skipping.")
-            continue
-        img_map_e, I_e = load_image_embeds(img_dir)
-        T_e = load_text_embeds(txt_dir, langs)
-        try:
-            T_list_e, I_shared_e, common_e = build_aligned_arrays(img_map_e, I_e, T_e, langs)
-        except SystemExit as e:
-            print(f"[eval:{es}] {e}. Skipping.")
-            continue
+        if not eval_splits:
+            report["config"]["holdout"] = args.holdout
+        else:
+            report["config"]["eval_splits"] = eval_splits
 
-        base_e = {langs[i]: retrieval_metrics(T_list_e[i], I_shared_e) for i in range(len(langs))}
-        with torch.no_grad():
-            T_proj_e = [F.normalize(t @ We_cpu, dim=-1) for t in T_list_e]
-        final_e = {langs[i]: retrieval_metrics(T_proj_e[i], I_shared_e) for i in range(len(langs))}
-        report["results"].append(_result_block(es, "eval", I_shared_e.size(0), base_e, final_e))
+        suffix = f"_{head_kind}" if args.head in ["mlp", "both"] else ""
+        if head_kind == "linear" and args.head == "linear":
+            suffix = ""  # keep exact old filenames for linear default
+        save_one(export, report, suffix=suffix)
 
-        def _delta_macro(d0, d1):
-            out = {}
-            for k in d0.keys():
-                out[k] = float(round(d1[k] - d0[k], 6))
-            return out
+        # External eval splits
+        if eval_splits:
+            for es in eval_splits:
+                img_dir = os.path.join(args.out_dir, "embeddings_image", es)
+                txt_dir = os.path.join(args.out_dir, "embeddings_text", es)
+                if not (os.path.isdir(img_dir) and os.path.isdir(txt_dir)):
+                    print(f"[eval:{es}][{head_kind}] missing embeddings dirs (image or text), skipping.")
+                    continue
+                img_map_e, I_e = load_image_embeds(img_dir)
+                T_e = load_text_embeds(txt_dir, langs)
+                try:
+                    T_list_e, I_shared_e, common_e = build_aligned_arrays(img_map_e, I_e, T_e, langs)
+                except SystemExit as e:
+                    print(f"[eval:{es}][{head_kind}] {e}. Skipping.")
+                    continue
 
-        diag_e_before = diagnostics_block("before", T_list_e, langs, sample=args.diag_sample, bins=args.diag_bins)
-        diag_e_after = diagnostics_block("after", T_proj_e, langs, sample=args.diag_sample, bins=args.diag_bins)
-        report["diagnostics"][f"eval:{es}"] = {
-            "before": diag_e_before,
-            "after": diag_e_after,
-            "delta_macro": _delta_macro(diag_e_before["macro_avg"], diag_e_after["macro_avg"]),
-            "gram_corr_mean": {"before": diag_e_before["gram_corr_mean"], "after": diag_e_after["gram_corr_mean"]},
-        }
-        print(f"[eval:{es}] done. common={len(common_e)}")
+                # Rebuild head on CPU for eval projection
+                if export["kind"] == "linear":
+                    W = export["W"].float()
+                    T_proj_e = [F.normalize(t @ W, dim=-1) for t in T_list_e]
+                else:
+                    # mlp eval: instantiate + load state_dict
+                    head_cpu = ResidualMLPHead(
+                        d_text=int(export["d_text"]),
+                        d_img=int(export["d_img"]),
+                        hidden=int(export["hidden"]),
+                        dropout=float(export["dropout"]),
+                        device=torch.device("cpu"),
+                    )
+                    head_cpu.load_state_dict(export["state_dict"])
+                    head_cpu.eval()
+                    with torch.no_grad():
+                        T_proj_e = [F.normalize(head_cpu(t), dim=-1) for t in T_list_e]
 
-    if args.save_report:
-        rep_path = os.path.join(save_dir, f"report_{args.train_split}_{'-'.join(langs)}.json")
-        with open(rep_path, "w", encoding="utf-8") as f:
-            json.dump(report, f, indent=2)
-        print(f"Saved report -> {rep_path}")
+                base_e = {langs[i]: retrieval_metrics(T_list_e[i], I_shared_e) for i in range(len(langs))}
+                final_e = {langs[i]: retrieval_metrics(T_proj_e[i], I_shared_e) for i in range(len(langs))}
+                report["results"].append(_result_block(es, "eval", I_shared_e.size(0), base_e, final_e))
+
+                def _delta_macro(d0, d1):
+                    out = {}
+                    for k in d0.keys():
+                        out[k] = float(round(d1[k] - d0[k], 6))
+                    return out
+
+                diag_e_before = diagnostics_block("before", T_list_e, langs, sample=args.diag_sample, bins=args.diag_bins)
+                diag_e_after = diagnostics_block("after", T_proj_e, langs, sample=args.diag_sample, bins=args.diag_bins)
+                report["diagnostics"][f"eval:{es}"] = {
+                    "before": diag_e_before,
+                    "after": diag_e_after,
+                    "delta_macro": _delta_macro(diag_e_before["macro_avg"], diag_e_after["macro_avg"]),
+                    "gram_corr_mean": {"before": diag_e_before["gram_corr_mean"], "after": diag_e_after["gram_corr_mean"]},
+                }
+                print(f"[eval:{es}][{head_kind}] done. common={len(common_e)}")
+
+            # re-save report after appending eval blocks
+            if args.save_report:
+                base = f"{args.train_split}_{'-'.join(langs)}{suffix}"
+                rep_path = os.path.join(save_dir, f"report_{base}.json")
+                with open(rep_path, "w", encoding="utf-8") as f:
+                    json.dump(report, f, indent=2)
+                print(f"Saved report (with eval) -> {rep_path}")
 
 if __name__ == "__main__":
     main()
