@@ -1,0 +1,11 @@
+\section{Conclusion}
+
+In this work, we investigated multilingual vision--language representation learning through an image-pivoted contrastive framework, where images serve as language-agnostic anchors and no parallel text is used during training. By restricting learning to a lightweight text-side projection head (primarily a residual linear mapping) and leveraging visual grounding as the sole cross-lingual signal, we were able to isolate and study how multilingual alignment emerges in CLIP-style models.
+
+Our experiments show that image-pivoted alignment consistently improves multilingual image--text retrieval across a diverse set of languages, including those with different scripts and resource levels. Importantly, improvements are measured on held-out folds under cross-validation, indicating that the alignment generalizes beyond the training subset used for optimization and is not driven by translation-based supervision or explicit cross-lingual constraints.
+
+Beyond performance, we conducted an in-depth representation analysis to understand the structural effects of multilingual alignment. We showed that alignment manifests as a gradual convergence of representational geometry across languages, characterized by increased cross-lingual similarity, improved isotropy, and healthier feature utilization. At the same time, intrinsic dimensionality is reduced in a controlled manner, suggesting that alignment removes redundant language-specific variation without inducing representational collapse.
+
+Taken together, our findings show that visual grounding alone constitutes a strong supervisory signal for multilingual alignment, and that the nature of the learned alignment depends critically on the capacity of the projection head: linear mappings favor structural convergence, while nonlinear heads favor retrieval performance. They also highlight the importance of going beyond downstream metrics and analyzing representation geometry when studying multilingual multimodal models.
+
+We hope that this work encourages further research into lightweight, interpretable approaches to multilingual alignment, as well as more systematic use of representation-level diagnostics to better understand the behavior and limitations of large multimodal models.

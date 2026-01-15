@@ -1,0 +1,34 @@
+\section{Introduction}
+
+Learning joint vision--language representations has emerged as a central problem in modern machine learning, enabling progress across a wide range of tasks such as image--text retrieval, visual question answering, and zero-shot image classification. Models trained with contrastive objectives on large-scale image--caption datasets, most notably CLIP-style architectures, have demonstrated that aligning visual and textual modalities in a shared embedding space yields representations that are both flexible and transferable.
+
+Despite these advances, the majority of existing vision--language models remain heavily English-centric. This limitation is particularly problematic given the inherently multilingual nature of visual content on the web and the growing demand for models that operate robustly across languages. Extending multimodal representation learning beyond English is therefore not merely a matter of coverage, but a prerequisite for fairness, accessibility, and global applicability.
+
+A natural approach to multilingual vision--language learning is to rely on parallel text, machine translation, or explicitly aligned multilingual corpora. While effective, these strategies introduce several drawbacks: translation pipelines can be noisy and biased, parallel data is scarce for low-resource languages, and strong textual supervision may obscure the role of visual grounding in cross-lingual alignment. As a result, it remains unclear to what extent multilingual alignment truly emerges from shared semantics, as opposed to being imposed by textual correspondence.
+
+An alternative and conceptually appealing paradigm treats images as language-agnostic pivots. Images provide a universal semantic signal that is independent of linguistic form, allowing captions in different languages that describe the same visual content to be indirectly aligned through contrastive learning. Under this image-pivot assumption, multilingual alignment can, in principle, emerge even in the absence of parallel text, provided that the visual modality is sufficiently informative and consistently grounded.
+
+Rather than proposing a new state-of-the-art multilingual CLIP variant, we intentionally restrict adaptation capacity to study when and how image-pivot supervision induces cross-lingual alignment.
+
+In this work, we explicitly distinguish between alignment capacity and representational structure.
+To this end, we study both linear residual and nonlinear (MLP-based) text projection heads under the same image-pivoted contrastive objective.
+This comparison allows us to disentangle gains due to increased model capacity from those arising from genuine structural alignment of multilingual representations.
+
+
+
+Several recent works have explored multilingual multimodal learning under this perspective, showing promising results on cross-lingual retrieval and zero-shot transfer. However, most existing studies focus primarily on downstream performance, leaving important questions unanswered. In particular, we still lack a clear understanding of how multilingual alignment manifests in the representation space, how it affects the geometry and dimensionality of embeddings, and whether improved alignment comes at the cost of representational collapse or loss of language-specific nuance.
+
+In this work, we revisit multilingual vision--language learning through the lens of image-pivoted contrastive alignment, with a specific focus on representation analysis. We study a CLIP-style framework trained on multilingual image--caption pairs without using parallel text during training, where the image encoder acts as the sole bridge across languages. Our goal is not only to improve multilingual retrieval performance, but also to characterize what changes in the embedding space as multilingual alignment emerges.
+
+To this end, we conduct a systematic analysis of multilingual text embeddings before and after image-pivot alignment. We examine cross-lingual representational similarity via Gram matrices, intrinsic dimensionality and isotropy, and feature activation statistics to characterize how alignment reshapes the embedding space. This analysis allows us to disentangle genuine semantic alignment from superficial improvements driven by hubness or over-regularization.
+
+Our contributions can be summarized as follows:
+
+\begin{itemize}
+    \item We demonstrate that image-pivoted contrastive learning can significantly improve multilingual image--text retrieval across a diverse set of languages, without relying on parallel text or machine translation.
+    \item We show that image-pivot alignment increases cross-lingual Gram-matrix correlation and improves isotropy (lower mean pairwise cosine similarity), while moderately reducing effective rank without collapse indicators (PoZ↓, entropy↑).
+    \item We show that effective multilingual alignment can be achieved while preserving healthy representation statistics, avoiding collapse and excessive loss of language-specific information.
+    \item We release a reproducible training and analysis pipeline to facilitate further research on multilingual multimodal representation learning (https://github.com/mattiadri/crosslingual-contrastive).
+\end{itemize}
+
+Overall, our findings support the view that visual grounding alone constitutes a powerful and underexplored signal for multilingual alignment, and that careful analysis of representation geometry is essential for understanding the strengths and limitations of image-pivoted approaches.

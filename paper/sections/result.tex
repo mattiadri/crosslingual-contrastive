@@ -1,0 +1,32 @@
+\section{Results}
+
+\subsection{Multilingual Image--Text Retrieval Performance}
+
+We first evaluate our approach on the task of multilingual image--text retrieval, which directly measures how well textual representations in different languages align with a shared visual embedding space. We report results for the text-to-image direction, using Recall@1, Recall@5, Recall@10, and Mean Reciprocal Rank (MRR). All metrics are computed per language and macro-averaged across languages.
+
+\subsubsection{Overall Performance}
+\input{sections/tables_results}
+
+Unless otherwise specified, all retrieval results are reported as mean $\pm$ standard deviation over 5-fold cross-validation, macro-averaged across the 9 languages (ar, de, en, es, fr, it, ja, pt, zh).
+
+We observe consistent improvements after alignment across all metrics. In particular, Linear improves macro R@1 by 0.0204 and macro MRR by 0.0180, while MLP yields larger gains (0.0314 R@1, 0.0260 MRR), and the effect is stable across folds, as indicated by the low standard deviation in Table~\ref{tab:cv_retrieval_macro}.
+
+Since we adapt only a lightweight projection head on top of frozen encoders, absolute improvements are bounded; nonetheless, gains are consistent across folds and languages, indicating a robust alignment effect.
+
+Interestingly, the MLP head yields the strongest gains in retrieval performance, whereas the linear residual head produces the most consistent improvements in cross-lingual representational similarity (RSA), indicating a trade-off between instance-level retrieval accuracy and global structural alignment.
+
+\subsubsection{Per-Language Analysis}
+
+Table~\ref{tab:cv_retrieval_perlang} reports Recall@1 and MRR (equivalent to mAP in our single-positive retrieval setup). for each individual language. Performance improvements are observed across all languages, including those with different scripts and morphological properties.
+
+Languages with weaker initial alignment, such as Arabic, Japanese, and Chinese, benefit particularly from image-pivot training, showing larger relative gains in both Recall@K and MRR. High-resource languages such as English, German, and French also improve, albeit with smaller absolute gains, reflecting their stronger initial alignment inherited from pretrained representations.
+
+This pattern suggests that image-pivot supervision is especially effective at reducing cross-lingual disparities, narrowing the performance gap between high-resource and lower-resource languages.
+
+\subsubsection{Effect of Balanced Multilingual Batching}
+
+We use language-balanced batching (equal number of samples per language within each batch) to prevent high-resource languages from dominating the contrastive objective. We found this choice important for stable multilingual alignment in practice.
+
+\subsubsection{Summary}
+
+Overall, these results demonstrate that image-pivoted contrastive learning is sufficient to induce strong multilingual alignment, yielding consistent retrieval improvements across a diverse set of languages without relying on parallel text or translation-based supervision.

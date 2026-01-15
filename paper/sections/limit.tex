@@ -1,0 +1,23 @@
+\section{Limitations and Ethical Considerations}
+
+\subsection{Limitations}
+
+While our results demonstrate that image-pivoted contrastive learning is effective for multilingual alignment, our approach has several limitations.
+
+First, our method relies on the availability of images paired with captions in multiple languages. Although we do not use parallel text during training, the presence of multilingual captions for the same image is still more common for high-resource languages and popular visual content. As a result, alignment quality may degrade for languages or domains where such data is scarce.
+
+Second, we restrict learning to lightweight text-side projection heads on top of frozen pretrained encoders (linear residual or small MLP), rather than end-to-end fine-tuning. While this design choice enables controlled analysis and computational efficiency, it may limit the expressiveness of the alignment compared to adapting the text encoder (or both encoders). More complex nonlinear mappings or deeper adaptation could further improve performance, at the cost of interpretability and training stability.
+
+Third, our evaluation focuses primarily on image--text retrieval and representation geometry. While these tasks are well-suited to measure cross-lingual alignment, they do not capture all aspects of multilingual understanding, such as compositional reasoning, pragmatic meaning, or culturally grounded concepts that may not be visually grounded.
+
+We do not directly quantify how much language-identifying information is retained (e.g., via language-ID probing), and thus cannot fully separate beneficial alignment from potential language erasure.
+
+Finally, although we analyze representation health using several diagnostics, we do not fully disentangle language invariance from language loss. Some degree of language-specific information may be beneficial for certain downstream tasks, and stronger alignment does not necessarily imply better performance in all multilingual settings.
+
+\subsection{Ethical Considerations}
+
+Our work uses large-scale web data, which may contain biases, stereotypes, or uneven representation across languages and cultures. Image--caption datasets are known to reflect societal biases present in online content, and multilingual captions may differ systematically in style, descriptiveness, or cultural framing. These factors can influence both model behavior and evaluation outcomes.
+
+By relying on images as alignment pivots, our method may also amplify visual bias, privileging concepts that are easily depicted visually while underrepresenting abstract, relational, or culturally specific meanings. This limitation is particularly relevant for languages whose semantic distinctions are less frequently grounded in visual content.
+
+We emphasize that our goal is analysis and understanding, rather than deployment in high-stakes applications. Any real-world use of multilingual vision--language models should be accompanied by careful dataset auditing, bias evaluation, and task-specific validation, especially when applied to underrepresented languages or communities.

@@ -1,0 +1,151 @@
+\section{Method}
+
+\subsection{Problem Formulation}
+
+We consider a multilingual vision--language learning setting with a set of images
+\begin{equation}
+\mathcal{I} = \{ I_i \}_{i=1}^{N},
+\end{equation}
+and, for each image $I_i$, a set of captions
+\begin{equation}
+\mathcal{T}_i = \{ T_i^{(l)} \mid l \in \mathcal{L} \},
+\end{equation}
+where $\mathcal{L}$ denotes a set of languages. During training, captions in different languages are never paired directly with each other; instead, each caption is paired only with its corresponding image.
+
+Our goal is to learn a shared embedding space in which image representations and multilingual text representations are aligned, such that captions describing the same visual content---regardless of language---are mapped close to the associated image and, indirectly, close to each other.
+
+\subsection{Dual-Encoder Architecture}
+
+We adopt a dual-encoder architecture similar to CLIP, consisting of:
+\begin{itemize}
+    \item an image encoder $f_{\text{img}}$, which maps an image $I$ to a visual embedding
+    \begin{equation}
+    \mathbf{v} = f_{\text{img}}(I) \in \mathbb{R}^{d},
+    \end{equation}
+    \item a multilingual text encoder $f_{\text{text}}$, which maps a caption $T$ to a textual embedding
+    \begin{equation}
+    \mathbf{t} = f_{\text{text}}(T) \in \mathbb{R}^{d}.
+    \end{equation}
+\end{itemize}
+
+The image encoder is initialized from a pretrained vision--language model and kept frozen in our main experiments.  
+The text encoder is also pretrained and frozen; multilingual alignment is achieved through a lightweight trainable projection head applied to text embeddings, described next.
+
+\subsection{Image-Pivot Text Projection}
+
+To align multilingual text embeddings with the visual embedding space, we apply a trainable projection head
+\begin{equation}
+g_{\text{text}} : \mathbb{R}^{d} \rightarrow \mathbb{R}^{d}
+\end{equation}
+on top of frozen text embeddings:
+\begin{equation}
+\tilde{\mathbf{t}} = g_{\text{text}}(\mathbf{t}).
+\end{equation}
+
+We consider two lightweight parameterizations of $g_{\text{text}}$: a linear residual mapping and a small residual MLP.  
+All projected text embeddings and image embeddings are $\ell_2$-normalized prior to computing similarities.
+
+\subsubsection{Linear Residual Head}
+
+In the linear setting, we parameterize the projection as a residual affine mapping
+\begin{equation}
+W \in \mathbb{R}^{d \times d}, \qquad
+W = I + \Delta W,
+\end{equation}
+where $I$ is the identity matrix and $\Delta W$ is the only trainable parameter.  
+Projected text embeddings are computed as
+\begin{equation}
+\tilde{\mathbf{t}} = \mathbf{t}W.
+\end{equation}
+
+This formulation encourages the learned mapping to remain close to the original pretrained embedding space unless the data provides strong evidence for deviation, enabling controlled and interpretable alignment.
+
+\subsubsection{Nonlinear MLP Head}
+\label{sec:mlp_head}
+
+To introduce additional capacity while remaining lightweight, we also consider a nonlinear projection head implemented as a small residual MLP.  
+Given a frozen text embedding $\mathbf{t} \in \mathbb{R}^{d}$, the MLP head computes
+\begin{equation}
+\tilde{\mathbf{t}} = \mathrm{MLP}(\mathbf{t}),
+\end{equation}
+where
+\begin{equation}
+\mathrm{MLP}(\mathbf{t}) =
+\mathbf{t} + \phi(\mathbf{t} W_1)\, W_2,
+\end{equation}
+with $W_1 \in \mathbb{R}^{d \times h}$, $W_2 \in \mathbb{R}^{h \times d}$, and element-wise nonlinearity $\phi$ (e.g., ReLU or GELU).
+
+The residual formulation preserves the inductive bias of staying close to the pretrained embedding space while allowing local nonlinear corrections.  
+As in the linear case, embeddings are $\ell_2$-normalized before similarity computation, and the same image-pivoted contrastive objective is used for training.
+
+\subsection{Image-Pivoted Contrastive Learning}
+
+Crucially, the objective contains only image--text terms: captions in different languages are neither paired as positives nor contrasted directly; cross-lingual coupling arises only through sharing the same image embedding within the batch.
+
+Training is performed using an image-pivoted contrastive objective.  
+For a mini-batch of images $\{ I_i \}_{i=1}^{B}$, we sample one caption per language for each image, yielding a batch of $B \times |\mathcal{L}|$ text embeddings.  
+The corresponding image embeddings are replicated across languages, ensuring that captions in different languages describing the same image are aligned through a shared visual anchor.
+
+We use a symmetric InfoNCE loss. Let
+\begin{equation}
+V \in \mathbb{R}^{M \times d}
+\end{equation}
+denote the batch of image embeddings and
+\begin{equation}
+\tilde{T} \in \mathbb{R}^{M \times d}
+\end{equation}
+the batch of projected text embeddings, where $M = B \times |\mathcal{L}|$.
+The similarity logits are given by
+\begin{equation}
+S = \frac{\tilde{T}V^\top}{\tau},
+\end{equation}
+where $\tau$ is a temperature hyperparameter.
+
+The training objective is
+\begin{equation}
+\mathcal{L}_{\text{CLIP}} =
+\frac{1}{2}\Big(
+\mathcal{L}_{\text{CE}}(S) + \mathcal{L}_{\text{CE}}(S^\top)
+\Big),
+\end{equation}
+where $\mathcal{L}_{\text{CE}}$ denotes the cross-entropy loss with matching image--text pairs as positives and all others as in-batch negatives.
+
+This formulation implicitly encourages captions from different languages that describe the same image to align, without requiring any explicit cross-lingual supervision.
+
+\subsection{Regularization and Stability}
+
+Beyond optimization stability, these terms act as inductive biases that preserve the geometry of the pretrained space, which is crucial for interpretability of representation-level changes.
+
+To further stabilize training and preserve representational structure, we optionally apply two regularization terms.
+
+\paragraph{Proximity-to-Identity Regularization.}
+\begin{equation}
+\mathcal{L}_{\text{prox}} = \|\Delta W\|_{F}^{2},
+\end{equation}
+which discourages large deviations from the identity mapping.
+
+\paragraph{Soft Orthogonality Regularization.}
+\begin{equation}
+\mathcal{L}_{\text{ortho}} = \|W^\top W - I\|_{F}^{2},
+\end{equation}
+which encourages the projection to preserve angles and distances in the embedding space.
+
+The final objective is
+\begin{equation}
+\mathcal{L} =
+\mathcal{L}_{\text{CLIP}}
++ \lambda_{\text{prox}} \mathcal{L}_{\text{prox}}
++ \lambda_{\text{ortho}} \mathcal{L}_{\text{ortho}},
+\end{equation}
+where $\lambda_{\text{prox}}$ and $\lambda_{\text{ortho}}$ are scalar hyperparameters.
+
+\subsection{Optimization}
+
+We optimize the model using Adam with weight decay and a cosine learning rate schedule with warm-up.  
+Training is performed for a fixed number of epochs with language-balanced mini-batches to prevent dominance of high-resource languages.  
+Early stopping is applied using retrieval performance on a held-out validation fold (macro-averaged Recall@1), and we evaluate using 5-fold cross-validation.
+
+\subsection{Discussion}
+
+By restricting learning to a lightweight projection head and using images as the sole cross-lingual signal, our method isolates the effect of visual grounding on multilingual alignment.  
+This design enables a controlled study of representation geometry while remaining computationally efficient and easily reproducible.

@@ -1,0 +1,59 @@
+\section{Experimental Setup}
+
+\subsection{Data}
+
+We train and evaluate on a multilingual image--caption dataset where each image is associated with captions in multiple languages. Importantly, we do not use any text--text supervision: captions in different languages are never paired as positives, no machine translation is used, and no parallel sentence-level alignment is provided to the model. Cross-lingual coupling arises only indirectly through the shared image identifier (image pivot).
+
+We consider a diverse set of languages spanning different language families and scripts, including both high-resource and lower-resource languages. To prevent dominance of high-resource languages during training, we employ language-balanced sampling, ensuring that each mini-batch contains an equal number of image--caption pairs per language.
+
+For evaluation, we use held-out folds of the same dataset under cross-validation. Parallel captions are used only for cross-lingual caption retrieval via image pivoting and for RSA comparisons across languages; they are never used as training positives.
+
+\subsection{Model Architecture}
+
+Our framework follows a CLIP-style dual-encoder architecture, consisting of a vision encoder and a text encoder that map images and captions into a shared embedding space.
+
+The vision encoder is initialized from a pretrained visual backbone and kept frozen in the primary experimental setting, allowing us to focus on multilingual alignment on the text side. The text encoder is a multilingual transformer pretrained on large-scale multilingual corpora, followed by a lightweight trainable projection head (either a linear residual mapping or a small MLP) that maps textual representations into the visual embedding space.
+
+In our main setting, both encoders are frozen and we optimize only a lightweight text-side projection head (either linear residual or MLP-based) on top of the pretrained embeddings, which isolates the effect of image-pivot alignment while keeping computation minimal and analysis controlled.
+
+\subsection{Training Objective}
+
+We train the model using a symmetric contrastive InfoNCE loss over image--text pairs. Given a batch of image embeddings and their corresponding caption embeddings, the objective encourages matching image--text pairs to have high cosine similarity while treating all other pairs in the batch as negatives.
+
+To encourage cross-lingual consistency, we exploit the image-pivot structure of the data: for a given image, captions from different languages are sampled together within the same batch. This design ensures that captions describing the same visual content---but expressed in different languages---are implicitly encouraged to align through their shared association with the image.
+
+Note that the loss is defined only over image--text pairs; no caption--caption contrastive term is used.
+We adopt a temperature-scaled contrastive loss and train using the Adam optimizer with a cosine learning rate schedule and warm-up. Additional regularization terms are optionally applied to stabilize training and preserve representational structure, including a proximity-to-identity constraint on the projection matrix and a soft orthogonality penalty.
+
+\subsection{Baselines}
+
+We intentionally avoid end-to-end fine-tuning baselines, as our goal is to isolate the effect of image-pivot supervision under minimal capacity, rather than maximizing absolute retrieval performance.
+
+We consider the pretrained embedding space (identity mapping) as our primary baseline, and compare it against image-pivot alignment learned through a residual projection head (linear residual or MLP-based). This controlled setup isolates the contribution of the image-pivot objective without confounding factors such as translation or additional supervision.
+
+\subsection{Evaluation Tasks and Metrics}
+
+We evaluate models primarily on multilingual image--text retrieval, considering both text-to-image and image-to-text directions. Performance is reported using standard retrieval metrics, including Recall@1, Recall@5, Recall@10, and Mean Reciprocal Rank (MRR), computed separately for each language and macro-averaged across languages.
+
+To assess cross-lingual alignment beyond retrieval accuracy, we also perform cross-lingual caption retrieval via image pivoting: given a caption in one language, we retrieve the corresponding image and then measure how well captions in another language associated with that image are recovered.
+
+\subsection{Representation Analysis}
+
+A central focus of our evaluation is the analysis of learned representations before and after image-pivot alignment. We employ several complementary diagnostics:
+
+\begin{itemize}
+    \item \textbf{Representational similarity analysis (RSA)}, using correlations between Gram matrices of text embeddings across languages to quantify structural alignment.
+    \item \textbf{Intrinsic dimensionality}, measured via effective rank and the number of principal components required to explain a fixed fraction of variance.
+    \item \textbf{Isotropy}, assessed through mean pairwise cosine similarity.
+    \item \textbf{Feature activation statistics}, including the percentage of near-zero activations and per-dimension entropy, to detect representation collapse or degeneration.
+\end{itemize}
+
+These analyses provide insight into how multilingual alignment reshapes the geometry of the embedding space and help distinguish meaningful semantic convergence from superficial alignment effects.
+
+\subsection{Implementation Details}
+
+All experiments are implemented in PyTorch.
+We optimize only the text-side projection head $g_{\text{text}}$ on top of frozen image and text embeddings, using either the linear residual head ($W = I + \Delta W$) or the residual MLP head described in Section~\ref{sec:mlp_head}.
+Unless otherwise stated, model selection is performed via 5-fold cross-validation on the training data: for each fold, the head parameters are trained on 4 folds and early stopping is applied based on macro-averaged Recall@1 computed on the held-out fold.
+We report mean $\pm$ standard deviation across folds.
+

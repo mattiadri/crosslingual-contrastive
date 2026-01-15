@@ -1,0 +1,52 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+
+\usepackage{microtype}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage[font=small,labelfont=bf]{caption}
+\usepackage[table]{xcolor}
+\usepackage{amsmath, amssymb}
+\usepackage{bookmark}
+\usepackage{hyperref}
+\usepackage[capitalize,noabbrev]{cleveref}
+
+% ---------- Metadata ----------
+\title{Multilingual CLIP Alignment via Image Pivoting}
+\author{Mattia Di Iorio}
+\date{December 2025}
+
+\begin{document}
+\maketitle
+
+% ---------- Abstract ----------
+\begin{abstract}
+Multilingual vision--language models have recently gained increasing attention as a means to extend the success of contrastive multimodal learning beyond English-centric settings. While prior work has shown that multilingual alignment can be achieved using parallel text or machine translation, it remains unclear to what extent visual grounding alone is sufficient to induce cross-lingual alignment, and how such alignment manifests in the structure of learned representations.
+
+In this work, we study multilingual vision--language representation learning under an image-pivoted contrastive framework, where images act as language-agnostic anchors and no parallel text is used during training. We adopt a CLIP-style objective and train on multilingual image--caption pairs drawn from diverse languages, encouraging captions that describe the same visual content to align implicitly through shared visual supervision.
+
+Beyond standard retrieval benchmarks, we compare linear and nonlinear text projection heads and focus on a detailed representation-level analysis of multilingual alignment. We examine cross-lingual representational similarity, intrinsic dimensionality, isotropy, and feature activation statistics before and after image-pivot alignment.
+
+Our results show that image-pivoted contrastive learning consistently improves multilingual image--text retrieval across languages, including lower-resource ones, while preserving stable intrinsic dimensionality, improved isotropy, and non-degenerate feature statistics. We find that multilingual alignment emerges as a gradual convergence of representational structure under linear alignment, while nonlinear heads yield stronger retrieval gains without necessarily inducing deeper geometric convergence.
+\end{abstract}
+\clearpage
+% ---------- Main Sections ----------
+\input{sections/introduction}
+\input{sections/related_work}
+\input{sections/method}
+\input{sections/experiments}
+\input{sections/result}
+\input{sections/representation_analysis}
+\input{sections/limit}
+\input{sections/conclusion}
+
+% ---------- Bibliography ----------
+\clearpage
+\bibliographystyle{plain}
+\bibliography{references}
+
+\end{document}

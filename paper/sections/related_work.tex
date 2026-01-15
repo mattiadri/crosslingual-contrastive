@@ -1,0 +1,35 @@
+\section{Related Work}
+
+Multilingual multimodal representation learning aims to build joint embedding spaces that align visual and textual semantics across multiple languages. Early work in vision--language modeling focused primarily on English-centric datasets and models, but recent years have seen a growing interest in extending these approaches to multilingual settings. In this section, we review prior work on multilingual vision--language representation learning, with particular emphasis on methods that leverage images as alignment pivots, contrastive learning objectives, and large-scale pre-training.
+
+\subsection{Multilingual Multimodal Representation Learning}
+
+One of the earliest directions in multilingual multimodal learning investigates how to align representations across languages by leveraging shared semantic signals. Kim et al.\ introduce MULE (Multimodal Universal Language Embedding), a framework designed to learn language-agnostic embeddings by jointly modeling text and images across multiple languages \cite{kim2020mule}. MULE combines multilingual textual supervision with visual grounding to encourage the emergence of a shared semantic space, demonstrating improved cross-lingual transfer on downstream tasks such as image--text retrieval and classification.
+
+Ni et al.\ propose M3P, a large-scale pre-training framework that unifies multilingual and multimodal learning via multitask objectives \cite{ni2021m3p}. M3P combines masked language modeling, masked region modeling, and cross-modal alignment objectives across multiple languages, showing that large-scale pre-training can substantially improve zero-shot and cross-lingual performance. However, M3P relies on parallel or weakly-aligned multilingual corpora and requires substantial computational resources.
+
+Zhou et al.\ introduce UC$^2$ (Universal Cross-Lingual Cross-Modal Vision-and-Language Pre-Training), which explicitly targets universality across both languages and modalities \cite{zhou2021uc2}. UC$^2$ integrates cross-lingual and cross-modal objectives within a unified transformer architecture, demonstrating strong performance on multilingual vision--language benchmarks. While effective, the approach again assumes access to multilingual supervision that may include parallel data.
+
+\subsection{Image-Pivoted Alignment Across Languages}
+
+A particularly relevant line of work explores the idea of using images as language-agnostic pivots to align text representations across languages. Gella et al.\ propose image pivoting as a mechanism to induce multilingual multimodal representations without requiring direct parallel text \cite{gella2017imagepivoting}. In this paradigm, captions in different languages that describe the same image are implicitly encouraged to align through their shared visual grounding. This insight is central to many subsequent approaches and motivates methods that avoid explicit cross-lingual textual supervision.
+
+Mohammadshahi et al.\ study the problem of aligning multilingual word embeddings for cross-modal retrieval, showing that visual information can serve as an effective bridge between languages \cite{mohammadshahi2019aligning}. Their work highlights how cross-modal objectives can induce cross-lingual structure even when textual alignment signals are weak or absent.
+
+Building on these ideas, Jain et al.\ propose MURAL, a multitask and multilingual retrieval framework that learns aligned representations across languages and modalities \cite{jain2021mural}. MURAL leverages contrastive learning with multilingual image--text pairs and demonstrates strong cross-lingual retrieval performance, especially in low-resource settings. However, the model still benefits from explicit multilingual balancing and task-specific supervision.
+
+\subsection{Multilingual Extensions of CLIP}
+
+CLIP-style contrastive learning has become a dominant paradigm for vision--language representation learning. Several works extend CLIP to multilingual scenarios. Chen et al.\ introduce mCLIP, which adapts CLIP to multiple languages via cross-lingual transfer \cite{chen2023mclip}. mCLIP initializes from an English CLIP model and transfers knowledge to other languages using multilingual text encoders and translation-based supervision. While effective, this approach depends on translation quality and parallel data during training.
+
+Ahmat et al.\ propose M$^2$-VLP, which enhances multilingual vision--language pre-training through multi-grained alignment, combining sentence-level and token-level objectives \cite{ahmat2024m2vlp}. Their approach shows that finer-grained alignment signals can improve multilingual robustness, but at the cost of increased model complexity and training overhead.
+
+Overall, multilingual CLIP variants demonstrate that strong multilingual performance is achievable, but many existing approaches rely on machine translation, parallel corpora, or explicit cross-lingual supervision.
+
+\subsection{Limitations of Prior Work and Positioning}
+
+Despite significant progress, existing multilingual multimodal approaches exhibit several limitations. Many methods rely on parallel text or translation pipelines, which may introduce noise and bias, especially for low-resource languages. Others require complex architectures or large-scale pre-training that limits reproducibility and accessibility.
+
+In contrast, image-pivoted approaches suggest that visual grounding alone may suffice to induce cross-lingual alignment, provided that training is carefully designed. However, prior work has not fully characterized how such alignment emerges, which layers contribute most to cross-lingual convergence, and how representation geometry changes during training.
+
+Our work builds on the image-pivot paradigm by systematically studying multilingual alignment in CLIP-style models trained on non-parallel multilingual image--caption pairs. We place particular emphasis on representation analysis---such as intrinsic dimensionality, neighborhood structure, and cross-lingual similarity---to better understand when and why image-pivot supervision succeeds or fails.
