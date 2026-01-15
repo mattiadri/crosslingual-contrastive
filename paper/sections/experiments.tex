@@ -46,6 +46,8 @@ A central focus of our evaluation is the analysis of learned representations bef
     \item \textbf{Intrinsic dimensionality}, measured via effective rank and the number of principal components required to explain a fixed fraction of variance.
     \item \textbf{Isotropy}, assessed through mean pairwise cosine similarity.
     \item \textbf{Feature activation statistics}, including the percentage of near-zero activations and per-dimension entropy, to detect representation collapse or degeneration.
+    \item \textbf{Hubness}, measured via $k$-NN in-degree statistics (skewness and top-1\% neighbor mass).
+    \item \textbf{Language-identification probing}, via a linear probe trained to predict language from embeddings.
 \end{itemize}
 
 These analyses provide insight into how multilingual alignment reshapes the geometry of the embedding space and help distinguish meaningful semantic convergence from superficial alignment effects.

@@ -11,11 +11,7 @@ Gram matrices capture relational structure up to orthogonal transformations, mak
 
 After image-pivot alignment, cross-lingual representational similarity increases under the linear residual head, while the MLP head improves retrieval without necessarily increasing RSA (Table~\ref{tab:diag_holdout_macro}). On the holdout folds, the mean off-diagonal Gram correlation increases from 0.345 $\pm$ 0.021 to 0.350 $\pm$ 0.022 under the linear head, while remaining stable under the MLP head. These gains indicate that multilingual alignment manifests not merely as instance-level retrieval improvements, but as a deeper convergence in the relational structure of the embedding space.
 
-This divergence between retrieval improvements and RSA gains highlights that stronger downstream performance does not necessarily imply deeper convergence of representational geometry.
-
-
-
-Importantly, this increase is observed across most language pairs rather than being driven by a small subset of dominant languages, suggesting that alignment emerges globally rather than through partial collapse.
+This divergence between retrieval improvements and RSA gains highlights that stronger downstream performance does not necessarily imply deeper convergence of representational geometry. Importantly, this increase is observed across most language pairs rather than being driven by a small subset of dominant languages, suggesting that alignment emerges globally rather than through partial collapse.
 
 \subsubsection{Intrinsic Dimensionality and Effective Rank}
 
@@ -27,20 +23,18 @@ This behavior suggests that alignment induces a controlled compression of the re
 
 Notably, this controlled reduction in effective rank is primarily observed under the linear head, while the MLP largely preserves the original dimensionality, consistent with its weaker impact on global structural alignment.
 
-
-
 \subsubsection{Isotropy and Hubness}
 
-To assess the global geometry of the embedding space, we compute mean pairwise cosine similarity among text embeddings as a proxy for isotropy and hubness. High mean similarity values indicate anisotropic spaces dominated by a small number of directions, which are known to harm retrieval performance.
+To assess the global geometry of the embedding space, we compute mean pairwise cosine similarity among text embeddings as a proxy for isotropy. High mean similarity values indicate anisotropic spaces dominated by a small number of directions, which are known to harm retrieval performance.
 
-After alignment, mean pairwise cosine similarity decreases substantially on the holdout folds (from 0.660 $\pm$ 0.004 to 0.625 $\pm$ 0.011 under the linear head), indicating improved isotropy. This indicates that image-pivot alignment improves isotropy, reducing hubness and yielding a more uniformly distributed embedding space.
+After alignment, mean pairwise cosine similarity decreases substantially on the holdout folds (from 0.660 $\pm$ 0.004 to 0.625 $\pm$ 0.011 under the linear head), indicating improved isotropy. Direct hubness measurements based on $k$-NN in-degree statistics remain largely stable (Table~\ref{tab:diag_holdout_macro}), suggesting that image-pivot alignment improves global geometry without inducing additional hub dominance.
 
-This geometric improvement is consistent with the observed retrieval gains, supporting the hypothesis that improved isotropy contributes to better cross-lingual alignment.
+This geometric improvement is consistent with the observed retrieval gains, supporting the hypothesis that improved isotropy---rather than increased hubness---contributes to better cross-lingual alignment.
 
 \subsubsection{Local Micro-Corrections (Qualitative UMAP)}
 
-Global 2D projections of the full embedding space are visually uninformative in our setting because the learned alignment heads apply small, local updates.
-To make these micro-corrections visible, we visualize local neighborhoods around captions that exhibit the largest increase in cosine similarity to their paired image after alignment.
+Global 2D projections of the full embedding space are visually uninformative in our setting because the learned alignment heads apply small, local updates. To make these micro-corrections visible, we visualize local neighborhoods around captions that exhibit the largest increase in cosine similarity to their paired image after alignment.
+
 For each anchor caption (English pivot), we fit UMAP on a local set containing neighboring images and the corresponding text embeddings (before, after-linear, after-MLP), and overlay the anchor displacement. This visualization is qualitative and is not used to derive quantitative claims.
 
 \begin{figure}[t]
@@ -52,7 +46,6 @@ For each anchor caption (English pivot), we fit UMAP on a local set containing n
     Arrows indicate the displacement from the pretrained embedding (before) to the representations obtained after linear and MLP-based image-pivot alignment (arrows are scaled for visibility).
     The gold star marks the paired image associated with the anchor caption.
     The figure illustrates that alignment emerges through small, structured local corrections rather than global rearrangements of the embedding space.}
-
     \label{fig:umap_micro_corrections}
 \end{figure}
 
@@ -60,14 +53,14 @@ For each anchor caption (English pivot), we fit UMAP on a local set containing n
 
 Finally, we examine low-level feature statistics to detect potential degeneration of representations. We measure the percentage of near-zero activations (PoZ) and the entropy of unit activations for each embedding dimension.
 
-PoZ is computed as the fraction of activations with |x| < 1e-3; entropy is computed via per-dimension histograms with 30 bins over [-1,1].
+PoZ is computed as the fraction of activations with $|x| < 10^{-3}$; entropy is computed via per-dimension histograms with 30 bins over $[-1,1]$.
 
 Across all languages, PoZ slightly decreases on the holdout folds (from 0.0363 $\pm$ 0.0003 to 0.0358 $\pm$ 0.0004 under the linear head), while average entropy increases (from 0.745 $\pm$ 0.002 to 0.777 $\pm$ 0.007 under the linear head). These trends indicate healthier representations with more informative and evenly utilized dimensions.
 
-Taken together, these statistics provide strong evidence that image-pivot alignment improves multilingual structure without inducing collapse or excessive sparsity.
+\subsubsection{Language-ID Probe}
+
+To assess how much language-identifying information is retained after alignment, we train a linear language-ID probe (multinomial logistic regression) to predict the caption language from frozen text embeddings. Probe accuracy remains close to chance and largely unchanged after image-pivot alignment (Table~\ref{tab:diag_holdout_macro}), suggesting that visual grounding improves multilingual structure without aggressively erasing language-specific signals.
 
 \subsubsection{Summary}
 
-
-Overall, image-pivoted contrastive learning induces multilingual alignment through structured geometric convergence when using a linear residual head, while nonlinear MLP heads primarily improve retrieval performance through increased capacity.
-These results underscore the importance of complementing downstream metrics with representation-level diagnostics when evaluating multilingual multimodal alignment.
+Overall, image-pivoted contrastive learning induces multilingual alignment through structured geometric convergence when using a linear residual head, while nonlinear MLP heads primarily improve retrieval performance through increased capacity. The combined diagnostics indicate that alignment improves isotropy and cross-lingual structure without inducing representational collapse, excessive hubness, or strong language invariance. These results underscore the importance of complementing downstream metrics with representation-level diagnostics when evaluating multilingual multimodal alignment.

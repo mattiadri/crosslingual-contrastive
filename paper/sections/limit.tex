@@ -10,7 +10,7 @@ Second, we restrict learning to lightweight text-side projection heads on top of
 
 Third, our evaluation focuses primarily on image--text retrieval and representation geometry. While these tasks are well-suited to measure cross-lingual alignment, they do not capture all aspects of multilingual understanding, such as compositional reasoning, pragmatic meaning, or culturally grounded concepts that may not be visually grounded.
 
-We do not directly quantify how much language-identifying information is retained (e.g., via language-ID probing), and thus cannot fully separate beneficial alignment from potential language erasure.
+We quantify language-identifying signal via a linear language-ID probe on text embeddings; however, this is only a coarse diagnostic and does not fully separate beneficial alignment from potential loss of language-specific nuances.
 
 Finally, although we analyze representation health using several diagnostics, we do not fully disentangle language invariance from language loss. Some degree of language-specific information may be beneficial for certain downstream tasks, and stronger alignment does not necessarily imply better performance in all multilingual settings.
 

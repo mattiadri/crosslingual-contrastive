@@ -42,6 +42,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from sklearn.model_selection import train_test_split, KFold
+from sklearn.linear_model import LogisticRegression
 
 # ---------------------- I/O ----------------------
 
@@ -198,7 +199,101 @@ def poz_and_entropy(X: torch.Tensor, eps: float = 1e-3, bins: int = 30) -> Tuple
     return poz, float(np.mean(ent))
 
 
-def diagnostics_block(label: str, X_list: List[torch.Tensor], langs: List[str], sample: int = 2000, bins: int = 30) -> Dict[str, object]:
+def hubness_stats(X: torch.Tensor, k: int = 10, sample: int = 2000) -> Dict[str, float]:
+    """Simple hubness diagnostics based on kNN in cosine space.
+
+    We count how often each point appears in the top-k neighbor lists of others.
+    Returns skewness and a few robust summaries of the count distribution.
+    """
+    n = X.size(0)
+    idx = _sample_rows(n, sample)
+    Xs = F.normalize(X[idx], dim=-1)
+    sims = (Xs @ Xs.T).cpu().numpy()
+    np.fill_diagonal(sims, -np.inf)
+
+    # top-k neighbors for each row
+    nn_idx = np.argpartition(-sims, kth=min(k, sims.shape[1]-1), axis=1)[:, :k]
+    counts = np.bincount(nn_idx.reshape(-1), minlength=sims.shape[0]).astype(np.float64)
+
+    mu = counts.mean()
+    sigma = counts.std(ddof=0) + 1e-12
+    skew = float(((counts - mu) ** 3).mean() / (sigma ** 3))
+
+    # hub ratio: fraction of total neighbor-mentions captured by the top 1% most-mentioned points
+    m = len(counts)
+    top = max(1, int(round(0.01 * m)))
+    top_sum = float(np.sort(counts)[-top:].sum())
+    total = float(counts.sum()) + 1e-12
+    hub_ratio_1pct = float(top_sum / total)
+
+    return {
+        "hub_k": float(k),
+        "hub_skew": skew,
+        "hub_max": float(counts.max()),
+        "hub_mean": float(mu),
+        "hub_std": float(counts.std(ddof=1) if m > 1 else 0.0),
+        "hub_ratio_1pct": hub_ratio_1pct,
+    }
+
+
+def language_id_probe(
+    X_list: List[torch.Tensor],
+    langs: List[str],
+    sample_per_lang: int = 2000,
+    test_size: float = 0.3,
+    seed: int = 0,
+    C: float = 1.0,
+    max_iter: int = 2000,
+) -> Dict[str, float]:
+    """Linear language-ID probe (multinomial logistic regression).
+
+    Reports test accuracy. Higher accuracy => more language-identifying signal.
+    """
+    rng = np.random.default_rng(seed)
+    X_all = []
+    y_all = []
+    for li, X in enumerate(X_list):
+        n = X.size(0)
+        take = min(sample_per_lang, n)
+        if take <= 1:
+            continue
+        sel = rng.choice(n, size=take, replace=False)
+        X_all.append(X[torch.as_tensor(sel)].cpu().numpy().astype(np.float32))
+        y_all.append(np.full((take,), li, dtype=np.int64))
+
+    if not X_all:
+        return {"acc": float("nan"), "n": 0.0, "k": float(len(langs))}
+
+    Xmat = np.concatenate(X_all, axis=0)
+    y = np.concatenate(y_all, axis=0)
+
+    Xtr, Xte, ytr, yte = train_test_split(Xmat, y, test_size=test_size, random_state=seed, stratify=y)
+    clf = LogisticRegression(
+        penalty="l2",
+        C=C,
+        solver="lbfgs",
+        # multi_class="multinomial", -> default
+        max_iter=max_iter,
+        n_jobs=None,
+    )
+    clf.fit(Xtr, ytr)
+    acc = float((clf.predict(Xte) == yte).mean())
+    return {"acc": acc, "n": float(len(y)), "k": float(len(np.unique(y)))}
+
+
+def diagnostics_block(
+    label: str,
+    X_list: List[torch.Tensor],
+    langs: List[str],
+    sample: int = 2000,
+    bins: int = 30,
+    hub_k: int = 10,
+    do_langid_probe: bool = True,
+    langid_sample_per_lang: int = 2000,
+    langid_test_size: float = 0.3,
+    langid_C: float = 1.0,
+    langid_seed: int = 0,
+) -> Dict[str, object]:
     gram = gram_corr_across_langs(X_list, sample=sample)
     per_lang = {}
     for l, X in zip(langs, X_list):
@@ -206,20 +301,35 @@ def diagnostics_block(label: str, X_list: List[torch.Tensor], langs: List[str], 
         pc90 = pca_components_for_var(X, var_thresh=0.90)
         iso = mean_pairwise_cosine(X, sample=sample)
         poz, ent = poz_and_entropy(X, eps=1e-3, bins=bins)
+        hub = hubness_stats(X, k=hub_k, sample=sample) if hub_k > 0 else {}
         per_lang[l] = {
             "effective_rank": round(er, 4),
             "pca90_components": int(pc90),
             "mean_pairwise_cosine": round(iso, 6),
             "PoZ": round(poz, 6),
             "entropy": round(ent, 6),
+            **({"hub_skew": round(float(hub.get("hub_skew", np.nan)), 6),
+                "hub_ratio_1pct": round(float(hub.get("hub_ratio_1pct", np.nan)), 6)} if hub else {}),
         }
     macro = {k: float(np.mean([per_lang[l][k] for l in per_lang])) for k in next(iter(per_lang.values())).keys()}
+
+    langid = None
+    if do_langid_probe:
+        langid = language_id_probe(
+            X_list,
+            langs,
+            sample_per_lang=langid_sample_per_lang,
+            test_size=langid_test_size,
+            seed=langid_seed,
+            C=langid_C,
+        )
     return {
         "label": label,
         "gram_corr_mean": round(gram["mean"], 6),
         "gram_corr_matrix": gram["matrix"],
         "per_lang": per_lang,
         "macro_avg": {k: (round(v, 6) if not isinstance(v, int) else v) for k, v in macro.items()},
+        **({"langid_probe": {"acc": round(float(langid["acc"]), 6), "n": int(langid["n"]), "k": int(langid["k"])}} if langid is not None else {}),
     }
 
 
@@ -367,6 +477,12 @@ def main():
     # Diagnostics options
     ap.add_argument("--diag_sample", type=int, default=2000, help="Sample size for O(n^2) diagnostics")
     ap.add_argument("--diag_bins", type=int, default=30, help="Histogram bins for entropy")
+    ap.add_argument("--hub_k", type=int, default=10, help="k for hubness diagnostics (0 = off)")
+    ap.add_argument("--no_langid_probe", action="store_true", help="Disable language-ID linear probe")
+    ap.add_argument("--langid_sample_per_lang", type=int, default=2000, help="Samples per language for lang-ID probe")
+    ap.add_argument("--langid_test_size", type=float, default=0.3, help="Test split for lang-ID probe")
+    ap.add_argument("--langid_C", type=float, default=1.0, help="Inverse regularization strength for logistic probe")
+    ap.add_argument("--langid_seed", type=int, default=0, help="Seed for lang-ID probe sampling")
 
     # Head choice
     ap.add_argument("--head", default="linear", choices=["linear", "mlp", "both"])
@@ -413,7 +529,19 @@ def main():
         print(f"[{run_tag}][{head_kind}] train items: {N} | langs={langs} | d_text={d_text} | d_img={d_img}")
 
         baseline_train = {langs[i]: retrieval_metrics(T_list[i], I_shared) for i in range(L)}
-        diag_before = diagnostics_block("before", T_list, langs, sample=args.diag_sample, bins=args.diag_bins)
+        diag_before = diagnostics_block(
+            "before",
+            T_list,
+            langs,
+            sample=args.diag_sample,
+            bins=args.diag_bins,
+            hub_k=args.hub_k,
+            do_langid_probe=(not args.no_langid_probe),
+            langid_sample_per_lang=args.langid_sample_per_lang,
+            langid_test_size=args.langid_test_size,
+            langid_C=args.langid_C,
+            langid_seed=args.langid_seed,
+        )
 
         # build head
         if head_kind == "linear":
@@ -504,7 +632,19 @@ def main():
         with torch.no_grad():
             T_proj_train = [F.normalize(head(t.to(device)), dim=-1).cpu() for t in T_list]
         final_train = {langs[i]: retrieval_metrics(T_proj_train[i], I_shared) for i in range(L)}
-        diag_after = diagnostics_block("after", T_proj_train, langs, sample=args.diag_sample, bins=args.diag_bins)
+        diag_after = diagnostics_block(
+            "after",
+            T_proj_train,
+            langs,
+            sample=args.diag_sample,
+            bins=args.diag_bins,
+            hub_k=args.hub_k,
+            do_langid_probe=(not args.no_langid_probe),
+            langid_sample_per_lang=args.langid_sample_per_lang,
+            langid_test_size=args.langid_test_size,
+            langid_C=args.langid_C,
+            langid_seed=args.langid_seed,
+        )
 
         def _delta_macro(d0, d1):
             out = {}
@@ -555,8 +695,32 @@ def main():
             final_h = {langs[i]: retrieval_metrics(T_proj_h[i], I_val) for i in range(L)}
             report["results"].append(_result_block("holdout", "holdout", I_val.size(0), base_h, final_h))
 
-            diag_h_before = diagnostics_block("before", T_val, langs, sample=args.diag_sample, bins=args.diag_bins)
-            diag_h_after = diagnostics_block("after", T_proj_h, langs, sample=args.diag_sample, bins=args.diag_bins)
+            diag_h_before = diagnostics_block(
+                "before",
+                T_val,
+                langs,
+                sample=args.diag_sample,
+                bins=args.diag_bins,
+                hub_k=args.hub_k,
+                do_langid_probe=(not args.no_langid_probe),
+                langid_sample_per_lang=args.langid_sample_per_lang,
+                langid_test_size=args.langid_test_size,
+                langid_C=args.langid_C,
+                langid_seed=args.langid_seed,
+            )
+            diag_h_after = diagnostics_block(
+                "after",
+                T_proj_h,
+                langs,
+                sample=args.diag_sample,
+                bins=args.diag_bins,
+                hub_k=args.hub_k,
+                do_langid_probe=(not args.no_langid_probe),
+                langid_sample_per_lang=args.langid_sample_per_lang,
+                langid_test_size=args.langid_test_size,
+                langid_C=args.langid_C,
+                langid_seed=args.langid_seed,
+            )
             report["diagnostics"]["holdout"] = {
                 "before": diag_h_before,
                 "after": diag_h_after,
@@ -741,8 +905,32 @@ def main():
                         out[k] = float(round(d1[k] - d0[k], 6))
                     return out
 
-                diag_e_before = diagnostics_block("before", T_list_e, langs, sample=args.diag_sample, bins=args.diag_bins)
-                diag_e_after = diagnostics_block("after", T_proj_e, langs, sample=args.diag_sample, bins=args.diag_bins)
+                diag_e_before = diagnostics_block(
+                    "before",
+                    T_list_e,
+                    langs,
+                    sample=args.diag_sample,
+                    bins=args.diag_bins,
+                    hub_k=args.hub_k,
+                    do_langid_probe=(not args.no_langid_probe),
+                    langid_sample_per_lang=args.langid_sample_per_lang,
+                    langid_test_size=args.langid_test_size,
+                    langid_C=args.langid_C,
+                    langid_seed=args.langid_seed,
+                )
+                diag_e_after = diagnostics_block(
+                    "after",
+                    T_proj_e,
+                    langs,
+                    sample=args.diag_sample,
+                    bins=args.diag_bins,
+                    hub_k=args.hub_k,
+                    do_langid_probe=(not args.no_langid_probe),
+                    langid_sample_per_lang=args.langid_sample_per_lang,
+                    langid_test_size=args.langid_test_size,
+                    langid_C=args.langid_C,
+                    langid_seed=args.langid_seed,
+                )
                 report["diagnostics"][f"eval:{es}"] = {
                     "before": diag_e_before,
                     "after": diag_e_after,
