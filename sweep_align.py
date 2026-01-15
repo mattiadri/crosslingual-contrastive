@@ -119,9 +119,9 @@ def read_core_metrics(report_json: Path) -> dict:
         "R@1_before": mac["before"]["R@1"],
         "R@1_after":  mac["after"]["R@1"],
         "dR1":        mac["delta"]["R@1"],
-        "mAP_before": mac["before"]["mAP"],
-        "mAP_after":  mac["after"]["mAP"],
-        "dmAP":       mac["delta"]["mAP"],
+        "MRR_before": mac["before"]["MRR"],
+        "MRR_after":  mac["after"]["MRR"],
+        "dMRR":       mac["delta"]["MRR"],
         "n_pairs":    pick["n_pairs"],
     }
 
@@ -171,9 +171,9 @@ def main():
         print("No linear results collected.")
         return
 
-    df_lin = df_lin.sort_values(["dR1", "dmAP"], ascending=[False, False]).reset_index(drop=True)
+    df_lin = df_lin.sort_values(["dR1", "dMRR"], ascending=[False, False]).reset_index(drop=True)
     best = df_lin.iloc[0].to_dict()
-    print("\n=== Best LINEAR (by Δ R@1, then Δ mAP) ===")
+    print("\n=== Best LINEAR (by Δ R@1, then Δ MRR) ===")
     print(best)
 
     # save linear summary
@@ -214,14 +214,14 @@ def main():
     df_best_lin = df_lin.head(1).copy()
     df_best_lin["model"] = "best_linear"
     if not df_mlp.empty:
-        df_mlp_sorted = df_mlp.sort_values(["dR1", "dmAP"], ascending=[False, False]).reset_index(drop=True)
+        df_mlp_sorted = df_mlp.sort_values(["dR1", "dMRR"], ascending=[False, False]).reset_index(drop=True)
         df_best_mlp = df_mlp_sorted.head(1).copy()
         df_best_mlp["model"] = "best_mlp"
         final = pd.concat([df_best_lin, df_best_mlp], ignore_index=True)
     else:
         final = df_best_lin
 
-    final_cols = ["model", "trial", "head", "block", "n_pairs", "R@1_before", "R@1_after", "dR1", "mAP_before", "mAP_after", "dmAP", "report", "weights"]
+    final_cols = ["model", "trial", "head", "block", "n_pairs", "R@1_before", "R@1_after", "dR1", "MRR_before", "MRR_after", "dMRR", "report", "weights"]
     final = final.loc[:, final_cols]
     final.to_csv(run_root / "final_compare.csv", index=False)
 

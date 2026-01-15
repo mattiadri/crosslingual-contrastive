@@ -18,7 +18,7 @@ python align_text_to_image.py \
   --epochs 16 --steps_per_epoch 10 --batch_per_lang 32 \
   --lr 1e-3 --wd 7e-4 --temp 0.10 --warmup 150 \
   --prox_id 3e-3 --ortho 0 --max_grad_norm 1.0 \
-  --head linear --kfold 3 --seed 7
+  --head linear --kfold 5 --seed 7
 
 python align_text_to_image.py \
   --out_dir webdataset --train_split full --eval_splits "" \
@@ -27,7 +27,7 @@ python align_text_to_image.py \
   --lr 1e-3 --wd 7e-4 --temp 0.10 --warmup 150 \
   --prox_id 3e-3 --max_grad_norm 1.0 \
   --head mlp --mlp_hidden 512 --mlp_dropout 0.0 \
-  --kfold 3 --seed 7
+  --kfold 5 --seed 7
 """
 
 import os
@@ -123,7 +123,7 @@ def retrieval_metrics(text: torch.Tensor, image: torch.Tensor, ks=(1, 5, 10)):
     for i in range(text.size(0)):
         rpos = (ranks[i] == i).nonzero(as_tuple=True)[0].item()
         inv.append(1.0 / (rpos + 1))
-    out["mAP"] = float(np.mean(inv))
+    out["MRR"] = float(np.mean(inv))
     return out
 
 
@@ -362,7 +362,7 @@ def main():
     ap.add_argument("--prox_id", type=float, default=0.0, help="L2 penalty (linear: on ΔW; mlp: on params). 0 = off")
     ap.add_argument("--ortho", type=float, default=0.0, help="Soft orthogonality (linear only). 0 = off")
     ap.add_argument("--max_grad_norm", type=float, default=0.0, help="Clip gradients by global norm; 0 = off")
-    ap.add_argument("--early_stop_metric", default="R@1", choices=["R@1", "mAP"], help="Early stopping metric")
+    ap.add_argument("--early_stop_metric", default="R@1", choices=["R@1", "MRR"], help="Early stopping metric")
 
     # Diagnostics options
     ap.add_argument("--diag_sample", type=int, default=2000, help="Sample size for O(n^2) diagnostics")
