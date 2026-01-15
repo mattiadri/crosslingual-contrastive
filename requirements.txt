@@ -16,3 +16,4 @@ open_clip_torch
 sentence_transformers
 matplotlib
 tabulate
+umap-learn
