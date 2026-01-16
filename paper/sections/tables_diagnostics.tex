@@ -5,18 +5,18 @@
 \toprule
  & Before & After (Linear) & After (MLP) \\
 \midrule
-Effective rank & $112.24 \pm 1.71$ & $107.93 \pm 1.74$ & $112.18 \pm 1.69$ \\
-PCA 90\% components & $146.04 \pm 1.27$ & $142.67 \pm 1.41$ & $145.42 \pm 1.47$ \\
-Mean cosine similarity & $0.660 \pm 0.004$ & $0.625 \pm 0.011$ & $0.626 \pm 0.018$ \\
-PoZ & $0.0363 \pm 0.0003$ & $0.0358 \pm 0.0004$ & $0.0354 \pm 0.0014$ \\
-Entropy & $0.745 \pm 0.002$ & $0.777 \pm 0.007$ & $0.774 \pm 0.005$ \\
-Gram corr.\ mean & $0.345 \pm 0.021$ & $0.350 \pm 0.022$ & $0.346 \pm 0.021$ \\
-Hubness skew ($k=10$) & $4.889 \pm 0.173$ & $4.980 \pm 0.155$ & $4.999 \pm 0.168$ \\
-Hub ratio (top 1\%) & $0.135 \pm 0.005$ & $0.135 \pm 0.005$ & $0.138 \pm 0.005$ \\
-Lang-ID probe acc. & $0.210 \pm 0.008$ & $0.210 \pm 0.008$ & $0.212 \pm 0.007$ \\
+Effective rank & $112.24 \pm 1.71$ & $107.15 \pm 1.96$ & $112.18 \pm 1.61$ \\
+PCA 90\% components & $146.04 \pm 1.27$ & $142.09 \pm 1.69$ & $145.38 \pm 1.22$ \\
+Mean cosine similarity & $0.660 \pm 0.004$ & $0.618 \pm 0.014$ & $0.618 \pm 0.004$ \\
+PoZ & $0.0363 \pm 0.0003$ & $0.0354 \pm 0.0006$ & $0.0349 \pm 0.0003$ \\
+Entropy & $0.745 \pm 0.002$ & $0.781 \pm 0.009$ & $0.777 \pm 0.002$ \\
+Gram corr.\ mean & $0.345 \pm 0.021$ & $0.351 \pm 0.021$ & $0.346 \pm 0.022$ \\
+Neighborhood overlap ($k=10$) & $0.083 \pm 0.003$ & $0.088 \pm 0.003$ & $0.083 \pm 0.002$ \\
+Hubness skew ($k=10$) & $4.889 \pm 0.173$ & $4.985 \pm 0.172$ & $5.045 \pm 0.174$ \\
+Hub ratio (top 1\%) & $0.135 \pm 0.005$ & $0.135 \pm 0.005$ & $0.140 \pm 0.006$ \\
+Lang-ID probe acc. & $0.210 \pm 0.008$ & $0.210 \pm 0.007$ & $0.213 \pm 0.007$ \\
 \bottomrule
 \end{tabular}
-\caption{Representation diagnostics on holdout folds
-(macro-averaged across languages, mean $\pm$ std over 5 folds).}
+\caption{Representation diagnostics on holdout folds (macro-averaged across languages, mean $\pm$ std over folds).}
 \label{tab:diag_holdout_macro}
 \end{table}

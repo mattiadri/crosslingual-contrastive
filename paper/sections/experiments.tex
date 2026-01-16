@@ -48,6 +48,7 @@ A central focus of our evaluation is the analysis of learned representations bef
     \item \textbf{Feature activation statistics}, including the percentage of near-zero activations and per-dimension entropy, to detect representation collapse or degeneration.
     \item \textbf{Hubness}, measured via $k$-NN in-degree statistics (skewness and top-1\% neighbor mass).
     \item \textbf{Language-identification probing}, via a linear probe trained to predict language from embeddings.
+    \item \textbf{Neighborhood overlap}, measured as cross-lingual $k$-NN neighborhood consistency (reported for $k=10$).
 \end{itemize}
 
 These analyses provide insight into how multilingual alignment reshapes the geometry of the embedding space and help distinguish meaningful semantic convergence from superficial alignment effects.

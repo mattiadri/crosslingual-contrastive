@@ -4,12 +4,12 @@
 
 We first evaluate our approach on the task of multilingual image--text retrieval, which directly measures how well textual representations in different languages align with a shared visual embedding space. We report results for the text-to-image direction, using Recall@1, Recall@5, Recall@10, and Mean Reciprocal Rank (MRR). All metrics are computed per language and macro-averaged across languages.
 
-\subsubsection{Overall Performance}
+\subsubsection{Text-to-Image Retrieval}
 \input{sections/tables_results}
 
 Unless otherwise specified, all retrieval results are reported as mean $\pm$ standard deviation over 5-fold cross-validation, macro-averaged across the 9 languages (ar, de, en, es, fr, it, ja, pt, zh).
 
-We observe consistent improvements after alignment across all metrics. In particular, Linear improves macro R@1 by 0.0204 and macro MRR by 0.0180, while MLP yields larger gains (0.0314 R@1, 0.0260 MRR), and the effect is stable across folds, as indicated by the low standard deviation in Table~\ref{tab:cv_retrieval_macro}.
+We observe consistent improvements after alignment across all metrics. In particular, Linear improves macro R@1 by 0.0217 and macro MRR by 0.0198, while MLP yields larger gains (0.0314 R@1, 0.0260 MRR), and the effect is stable across folds, as indicated by the low standard deviation in Table~\ref{tab:cv_retrieval_macro}.
 
 Since we adapt only a lightweight projection head on top of frozen encoders, absolute improvements are bounded; nonetheless, gains are consistent across folds and languages, indicating a robust alignment effect.
 
@@ -17,11 +17,42 @@ Interestingly, the MLP head yields the strongest gains in retrieval performance,
 
 \subsubsection{Per-Language Analysis}
 
-Table~\ref{tab:cv_retrieval_perlang} reports Recall@1 and MRR (equivalent to mAP in our single-positive retrieval setup) for each individual language. Performance improvements are observed across all languages, including those with different scripts and morphological properties.
+Table~\ref{tab:cv_retrieval_perlang} reports Recall@1 and MRR (closely related to AP in a single-positive retrieval setup) for each individual language. Performance improvements are observed across all languages, including those with different scripts and morphological properties.
 
 Languages with weaker initial alignment, such as Arabic, Japanese, and Chinese, benefit particularly from image-pivot training, showing larger relative gains in both Recall@K and MRR. High-resource languages such as English, German, and French also improve, albeit with smaller absolute gains, reflecting their stronger initial alignment inherited from pretrained representations.
 
 This pattern suggests that image-pivot supervision is especially effective at reducing cross-lingual disparities, narrowing the performance gap between high-resource and lower-resource languages.
+
+\subsubsection{Image-to-Text Retrieval}
+\input{sections/tables_results_i2t}
+
+\paragraph{Asymmetry between text-to-image and image-to-text retrieval.}
+We observe that, in contrast to the consistent gains in text-to-image retrieval, image-to-text retrieval performance decreases after image-pivot alignment, with a larger drop under the linear head and a partial recovery under the MLP head (Table~\ref{tab:cv_retrieval_macro_i2t}).
+
+This behavior is expected given our training setup.
+
+Although we optimize a symmetric contrastive objective, adaptation is restricted exclusively to the text-side projection head, while the image encoder remains frozen.
+
+As a result, text embeddings are explicitly optimized to better retrieve their paired images, but image embeddings are not optimized to retrieve text.
+
+This induces a geometric asymmetry in the shared space, favoring text-to-image retrieval at the expense of image-to-text performance.
+
+Introducing a trainable projection on the image side would restore symmetry between the two retrieval directions, but would also undermine the role of images as fixed language-agnostic pivots.
+
+We therefore intentionally accept this trade-off in order to isolate and analyze the effects of image-pivot supervision on multilingual text representations.
+
+\subsubsection{Cross-Lingual Caption Retrieval via Image Pivot}
+\input{sections/tables_pivot}
+
+Cross-lingual caption retrieval via image pivot highlights a complementary trade-off between alignment capacity and structural convergence.
+
+While the linear head improves global representational similarity, it yields marginal or slightly negative effects on pivot-based retrieval, which requires accurate instance-level alignment across two retrieval steps.
+
+In contrast, the MLP head significantly improves pivot retrieval performance, suggesting that local nonlinear corrections are more effective for cross-lingual coupling mediated by visual grounding.
+
+To directly assess cross-lingual coupling induced by visual grounding, we evaluate cross-lingual caption retrieval via image pivoting: given a caption in a source language, we retrieve the corresponding image and then retrieve captions in a target language associated with that image.
+
+Table~\ref{tab:pivot_macro} shows that the MLP head improves pivot-based cross-lingual retrieval, whereas the linear head yields marginal or slightly negative changes, consistent with the capacity-versus-structure trade-off observed in our representation analysis.
 
 \subsubsection{Effect of Balanced Multilingual Batching}
 
