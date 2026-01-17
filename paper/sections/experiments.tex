@@ -2,6 +2,24 @@
 
 \subsection{Data}
 
+% --- PATCH_DATASET_CONSTRUCTION ---
+\subsubsection{Dataset construction and final size}
+
+We build a custom multilingual image--caption dataset starting from Wikipedia-based image--text metadata (WIT v1 split files), and package it into WebDataset shards for efficient streaming.
+Each sample is keyed by a stable image identifier (derived from the image URL / metadata and used consistently across languages) to ensure that captions in different languages can be associated through a shared image pivot.
+
+\paragraph{Filtering and validation.}
+We apply the following filtering and QA steps:
+(i) we keep only samples with non-empty captions for each selected language;
+(ii) we enforce a strict language intersection constraint, retaining only images that have captions available in \emph{all} the languages in $\mathcal{L}$ (ar, de, en, es, fr, it, ja, pt, zh);
+(iii) we validate images by decoding and integrity checks (PIL \texttt{verify}), while rejecting non-image payloads (e.g., HTML/JSON) and handling problematic formats (e.g., SVG rasterization, TIFF detection) before re-encoding to a robust RGB format.
+
+\paragraph{Final dataset size.}
+After filtering, the final aligned dataset contains $N=2770$ unique images, each with $|\mathcal{L}|=9$ captions (one per language), for a total of $N \times |\mathcal{L}|=24930$ image--caption pairs.
+In our 5-fold cross-validation protocol, each holdout fold contains 554 images (and thus 554 queries per language for text-to-image retrieval), while the remaining 2216 images are used for training in that fold.
+
+% --- END PATCH_DATASET_CONSTRUCTION ---
+
 We train and evaluate on a multilingual image--caption dataset where each image is associated with captions in multiple languages. Importantly, we do not use any text--text supervision: captions in different languages are never paired as positives, no machine translation is used, and no parallel sentence-level alignment is provided to the model. Cross-lingual coupling arises only indirectly through the shared image identifier (image pivot).
 
 We consider a diverse set of languages spanning different language families and scripts, including both high-resource and lower-resource languages. To prevent dominance of high-resource languages during training, we employ language-balanced sampling, ensuring that each mini-batch contains an equal number of image--caption pairs per language.
@@ -9,10 +27,18 @@ We consider a diverse set of languages spanning different language families and 
 For evaluation, we use held-out folds of the same dataset under cross-validation. Parallel captions are used only for cross-lingual caption retrieval via image pivoting and for RSA comparisons across languages; they are never used as training positives.
 
 \subsection{Model Architecture}
+% --- PATCH_ENCODERS_EXACT ---
+\paragraph{Frozen encoders (exact backbones).}
+Image embeddings are extracted with OpenCLIP \texttt{ViT-B-32} initialized with the \texttt{openai} pretrained tag, and $\ell_2$-normalized for cosine similarity.
+Text embeddings are extracted with the Sentence-Transformers model \texttt{sentence-transformers/clip-ViT-B-32-multilingual-v1}, which maps multilingual text directly into a CLIP-compatible embedding space with matched dimensionality.
+This choice makes the identity baseline meaningful (CLIP-compatible, dimension-matched, cosine-ready embeddings) and isolates the contribution of image-pivot alignment learned by the lightweight projection head.
+
+% --- END PATCH_ENCODERS_EXACT ---
+
 
 Our framework follows a CLIP-style dual-encoder architecture, consisting of a vision encoder and a text encoder that map images and captions into a shared embedding space.
 
-The vision encoder is initialized from a pretrained visual backbone and kept frozen in the primary experimental setting, allowing us to focus on multilingual alignment on the text side. The text encoder is a multilingual transformer pretrained on large-scale multilingual corpora, followed by a lightweight trainable projection head (either a linear residual mapping or a small MLP) that maps textual representations into the visual embedding space.
+The vision encoder is initialized from a pretrained visual backbone and kept frozen in the primary experimental setting, allowing us to focus on multilingual alignment on the text side. The text encoder is a multilingual CLIP-compatible text model (Sentence-Transformers) pretrained for cross-lingual alignment in the CLIP space, followed by a lightweight trainable projection head (either a linear residual mapping or a small MLP) that maps textual representations into the visual embedding space.
 
 In our main setting, both encoders are frozen and we optimize only a lightweight text-side projection head (either linear residual or MLP-based) on top of the pretrained embeddings, which isolates the effect of image-pivot alignment while keeping computation minimal and analysis controlled.
 
@@ -26,12 +52,28 @@ Note that the loss is defined only over image--text pairs; no caption--caption c
 We adopt a temperature-scaled contrastive loss and train using the Adam optimizer with a cosine learning rate schedule and warm-up. Additional regularization terms are optionally applied to stabilize training and preserve representational structure, including a proximity-to-identity constraint on the projection matrix and a soft orthogonality penalty.
 
 \subsection{Baselines}
+% --- PATCH_FREEZE_MOTIVATION ---
+\paragraph{Why frozen backbones.}
+Freezing both towers is a deliberate design choice: it reduces compute, prevents overfitting in small datasets, and preserves the geometry of the pretrained space, making representation-level comparisons before/after alignment interpretable.
+In many practical deployments (small datasets, specialized domains), training only a lightweight head is also the most feasible adaptation strategy.
+
+% --- END PATCH_FREEZE_MOTIVATION ---
+
 
 We intentionally avoid end-to-end fine-tuning baselines, as our goal is to isolate the effect of image-pivot supervision under minimal capacity, rather than maximizing absolute retrieval performance.
 
 We consider the pretrained embedding space (identity mapping) as our primary baseline, and compare it against image-pivot alignment learned through a residual projection head (linear residual or MLP-based). This controlled setup isolates the contribution of the image-pivot objective without confounding factors such as translation or additional supervision.
 
 \subsection{Evaluation Tasks and Metrics}
+% --- PATCH_RETRIEVAL_POOL ---
+\paragraph{Retrieval pool size.}
+To interpret Recall@K values, it is important to note that retrieval is performed within each held-out fold.
+In 5-fold CV, each evaluation pool contains 554 candidate images.
+Therefore, text-to-image retrieval uses 554 queries per language and 554 candidate images per fold (one correct match per query).
+This relatively small pool size makes Recall@1 values higher than large-scale benchmarks, and we report mean $\pm$ std across folds to mitigate variance.
+
+% --- END PATCH_RETRIEVAL_POOL ---
+
 
 We evaluate models primarily on multilingual image--text retrieval, considering both text-to-image and image-to-text directions. Performance is reported using standard retrieval metrics, including Recall@1, Recall@5, Recall@10, and Mean Reciprocal Rank (MRR), computed separately for each language and macro-averaged across languages.
 

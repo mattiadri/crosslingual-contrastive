@@ -14,6 +14,17 @@ Zhou et al.\ introduce UC$^2$ (Universal Cross-Lingual Cross-Modal Vision-and-La
 
 A particularly relevant line of work explores the idea of using images as language-agnostic pivots to align text representations across languages. Gella et al.\ propose image pivoting as a mechanism to induce multilingual multimodal representations without requiring direct parallel text \cite{gella2017imagepivoting}. In this paradigm, captions in different languages that describe the same image are implicitly encouraged to align through their shared visual grounding. This insight is central to many subsequent approaches and motivates methods that avoid explicit cross-lingual textual supervision.
 
+% --- PATCH_GELLA_POSITIONING ---
+
+\paragraph{Difference from Gella et al.\ and positioning.}
+While Gella et al.\ introduce the image-pivot intuition to induce multilingual multimodal representations, our focus is deliberately different:
+we study \emph{lightweight} image-pivot alignment on top of \emph{frozen} pretrained CLIP-compatible encoders, by training only a small text-side projection head (linear residual or shallow MLP).
+This controlled setting isolates how much alignment can be induced purely from visual grounding without end-to-end adaptation, and enables detailed geometric diagnostics (RSA, intrinsic dimensionality, isotropy, activation statistics).
+Practically, this makes our approach well-suited to small-resource or domain-specific scenarios where end-to-end training is unstable, expensive, or data-limited (e.g., narrow-domain artwork or medical-image caption retrieval).
+
+% --- END PATCH_GELLA_POSITIONING ---
+ 
+
 Mohammadshahi et al.\ study the problem of aligning multilingual word embeddings for cross-modal retrieval, showing that visual information can serve as an effective bridge between languages \cite{mohammadshahi2019aligning}. Their work highlights how cross-modal objectives can induce cross-lingual structure even when textual alignment signals are weak or absent.
 
 Building on these ideas, Jain et al.\ propose MURAL, a multitask and multilingual retrieval framework that learns aligned representations across languages and modalities \cite{jain2021mural}. MURAL leverages contrastive learning with multilingual image--text pairs and demonstrates strong cross-lingual retrieval performance, especially in low-resource settings. However, the model still benefits from explicit multilingual balancing and task-specific supervision.
